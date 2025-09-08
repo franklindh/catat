@@ -1,8 +1,8 @@
-include .env
+-include .env
 export
 
-DB_USER ?= $(shell echo $$DB_USER)
-DB_PASSWORD ?= $(shell echo $$DB_PASSWORD)
+DB_USER ?= root
+DB_PASSWORD ?= password
 DB_HOST ?= localhost
 DB_PORT ?= 5432
 DB_NAME ?= catat_db
