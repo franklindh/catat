@@ -11,6 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAccountsByUser = `-- name: CountAccountsByUser :one
+SELECT COUNT(*) 
+FROM "accounts"
+WHERE user_id = $1
+`
+
+func (q *Queries) CountAccountsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAccountsByUser, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO "accounts" (
   user_id,
@@ -66,7 +79,7 @@ func (q *Queries) DeleteAccount(ctx context.Context, arg DeleteAccountParams) er
 }
 
 const getAccount = `-- name: GetAccount :one
-SELECT id, user_id, name, type, balance, created_at, updated_at FROM "accounts"
+SELECT id, user_id, name, type, balance, created_at, updated_at  FROM "accounts"
 WHERE id = $1 AND user_id = $2
 `
 
@@ -94,10 +107,17 @@ const listAccounts = `-- name: ListAccounts :many
 SELECT id, user_id, name, type, balance, created_at, updated_at FROM "accounts"
 WHERE user_id = $1
 ORDER BY name
+LIMIT $2 OFFSET $3
 `
 
-func (q *Queries) ListAccounts(ctx context.Context, userID pgtype.UUID) ([]Account, error) {
-	rows, err := q.db.Query(ctx, listAccounts, userID)
+type ListAccountsParams struct {
+	UserID pgtype.UUID
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListAccounts(ctx context.Context, arg ListAccountsParams) ([]Account, error) {
+	rows, err := q.db.Query(ctx, listAccounts, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

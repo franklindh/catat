@@ -10,13 +10,19 @@ INSERT INTO "accounts" (
 RETURNING *;
 
 -- name: GetAccount :one
-SELECT * FROM "accounts"
+SELECT id, user_id, name, type, balance, created_at, updated_at  FROM "accounts"
 WHERE id = $1 AND user_id = $2;
 
 -- name: ListAccounts :many
-SELECT * FROM "accounts"
+SELECT id, user_id, name, type, balance, created_at, updated_at FROM "accounts"
 WHERE user_id = $1
-ORDER BY name;
+ORDER BY name
+LIMIT $2 OFFSET $3;
+
+-- name: CountAccountsByUser :one
+SELECT COUNT(*) 
+FROM "accounts"
+WHERE user_id = $1;
 
 -- name: UpdateAccountBalance :one
 UPDATE "accounts"

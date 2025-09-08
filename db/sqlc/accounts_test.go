@@ -18,7 +18,6 @@ func createRandomNumeric(value string) pgtype.Numeric {
 	return n
 }
 
-// Fungsi helper untuk mengkonversi pgtype.Timestamptz ke time.Time
 func toTime(t pgtype.Timestamptz) time.Time {
 	if t.Valid {
 		return t.Time
@@ -26,7 +25,6 @@ func toTime(t pgtype.Timestamptz) time.Time {
 	return time.Time{}
 }
 
-// Fungsi helper untuk membuat user test
 func createTestUser(t *testing.T) User {
 	arg := CreateUserParams{
 		Email:        "test" + uuid.New().String() + "@example.com",
@@ -40,18 +38,15 @@ func createTestUser(t *testing.T) User {
 	return user
 }
 
-// Fungsi helper untuk membandingkan numeric values
 func assertNumericEqual(t *testing.T, expected, actual pgtype.Numeric, msg string) {
 	t.Helper()
 
-	// Convert both numerics to big.Rat for precise comparison
 	expectedRat := numericToRat(expected)
 	actualRat := numericToRat(actual)
 
-	assert.Equal(t, expectedRat.Cmp(actualRat), 0, msg)
+	assert.Equal(t, 0, expectedRat.Cmp(actualRat), msg)
 }
 
-// Fungsi helper untuk mengkonversi pgtype.Numeric ke *big.Rat
 func numericToRat(n pgtype.Numeric) *big.Rat {
 	if !n.Valid {
 		return new(big.Rat)
@@ -62,10 +57,8 @@ func numericToRat(n pgtype.Numeric) *big.Rat {
 		return rat
 	}
 
-	// Set numerator
 	rat.SetFrac(n.Int, big.NewInt(1))
 
-	// Apply exponent (divide by 10^abs(Exp) if Exp < 0, multiply by 10^Exp if Exp > 0)
 	if n.Exp < 0 {
 		divisor := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(-n.Exp)), nil)
 		rat.Quo(rat, new(big.Rat).SetFrac(divisor, big.NewInt(1)))
@@ -77,8 +70,83 @@ func numericToRat(n pgtype.Numeric) *big.Rat {
 	return rat
 }
 
-func createRandomAccount(t *testing.T) Account {
-	// Buat user terlebih dahulu
+func TestListAccountsPaginated(t *testing.T) {
+
+	user := createTestUser(t)
+
+	accountNames := []string{"Account A", "Account B", "Account C", "Account D", "Account E"}
+
+	for _, name := range accountNames {
+		arg := CreateAccountParams{
+			UserID:  user.ID,
+			Name:    name,
+			Type:    "Savings",
+			Balance: createRandomNumeric("1000.00"),
+		}
+
+		account, err := testQueries.CreateAccount(context.Background(), arg)
+		require.NoError(t, err)
+		require.NotEmpty(t, account)
+	}
+
+	accounts, err := testQueries.ListAccounts(context.Background(), ListAccountsParams{
+		UserID: user.ID,
+		Limit:  2,
+		Offset: 0,
+	})
+	require.NoError(t, err)
+	require.Len(t, accounts, 2)
+	assert.Equal(t, "Account A", accounts[0].Name)
+	assert.Equal(t, "Account B", accounts[1].Name)
+
+	accounts, err = testQueries.ListAccounts(context.Background(), ListAccountsParams{
+		UserID: user.ID,
+		Limit:  2,
+		Offset: 2,
+	})
+	require.NoError(t, err)
+	require.Len(t, accounts, 2)
+	assert.Equal(t, "Account C", accounts[0].Name)
+	assert.Equal(t, "Account D", accounts[1].Name)
+
+	accounts, err = testQueries.ListAccounts(context.Background(), ListAccountsParams{
+		UserID: user.ID,
+		Limit:  2,
+		Offset: 4,
+	})
+	require.NoError(t, err)
+	require.Len(t, accounts, 1)
+	assert.Equal(t, "Account E", accounts[0].Name)
+}
+
+func TestCountAccountsByUser(t *testing.T) {
+
+	user := createTestUser(t)
+
+	initialCount, err := testQueries.CountAccountsByUser(context.Background(), user.ID)
+	require.NoError(t, err)
+
+	for i := 0; i < 3; i++ {
+		arg := CreateAccountParams{
+			UserID:  user.ID,
+			Name:    "Test Account " + string(rune(i+65)),
+			Type:    "Savings",
+			Balance: createRandomNumeric("1000.00"),
+		}
+
+		account, err := testQueries.CreateAccount(context.Background(), arg)
+		require.NoError(t, err)
+		require.NotEmpty(t, account)
+	}
+
+	finalCount, err := testQueries.CountAccountsByUser(context.Background(), user.ID)
+	require.NoError(t, err)
+
+	assert.Equal(t, initialCount+3, finalCount)
+}
+
+func TestCreateAccount(t *testing.T) {
+
 	user := createTestUser(t)
 
 	arg := CreateAccountParams{
@@ -94,52 +162,84 @@ func createRandomAccount(t *testing.T) Account {
 
 	assert.Equal(t, arg.Name, account.Name)
 	assert.Equal(t, arg.Type, account.Type)
+	assert.Equal(t, arg.UserID, account.UserID)
 
-	// Compare numeric values
 	assertNumericEqual(t, arg.Balance, account.Balance, "balance should match")
 
 	assert.WithinDuration(t, time.Now(), toTime(account.CreatedAt), 5*time.Second)
 	assert.WithinDuration(t, time.Now(), toTime(account.UpdatedAt), 5*time.Second)
-
-	return account
-}
-
-func TestCreateAccount(t *testing.T) {
-	createRandomAccount(t)
 }
 
 func TestGetAccount(t *testing.T) {
-	createdAccount := createRandomAccount(t)
 
-	arg := GetAccountParams{
-		ID:     createdAccount.ID,
-		UserID: createdAccount.UserID,
+	user := createTestUser(t)
+
+	arg := CreateAccountParams{
+		UserID:  user.ID,
+		Name:    "Test Account",
+		Type:    "Savings",
+		Balance: createRandomNumeric("1000.00"),
 	}
 
-	account, err := testQueries.GetAccount(context.Background(), arg)
+	createdAccount, err := testQueries.CreateAccount(context.Background(), arg)
+	require.NoError(t, err)
+	require.NotEmpty(t, createdAccount)
+
+	getArg := GetAccountParams{
+		ID:     createdAccount.ID,
+		UserID: user.ID,
+	}
+
+	account, err := testQueries.GetAccount(context.Background(), getArg)
 	require.NoError(t, err)
 	require.NotEmpty(t, account)
 
 	assert.Equal(t, createdAccount.ID, account.ID)
 	assert.Equal(t, createdAccount.Name, account.Name)
 	assert.Equal(t, createdAccount.Type, account.Type)
+	assert.Equal(t, createdAccount.UserID, account.UserID)
 
-	// Compare numeric values
 	assertNumericEqual(t, createdAccount.Balance, account.Balance, "balance should match")
 
 	assert.Equal(t, createdAccount.CreatedAt, account.CreatedAt)
 	assert.Equal(t, createdAccount.UpdatedAt, account.UpdatedAt)
 }
 
-func TestListAccounts(t *testing.T) {
-	// Buat satu user untuk semua account
+func TestGetAccountNotFound(t *testing.T) {
+
 	user := createTestUser(t)
 
-	// Create multiple accounts untuk user yang sama
-	for i := 0; i < 3; i++ {
+	accountUser := createTestUser(t)
+	accountArg := CreateAccountParams{
+		UserID:  accountUser.ID,
+		Name:    "Test Account",
+		Type:    "Savings",
+		Balance: createRandomNumeric("1000.00"),
+	}
+
+	createdAccount, err := testQueries.CreateAccount(context.Background(), accountArg)
+	require.NoError(t, err)
+	require.NotEmpty(t, createdAccount)
+
+	getArg := GetAccountParams{
+		ID:     createdAccount.ID,
+		UserID: user.ID,
+	}
+
+	_, err = testQueries.GetAccount(context.Background(), getArg)
+	assert.Error(t, err)
+}
+
+func TestListAccounts(t *testing.T) {
+
+	user := createTestUser(t)
+
+	accountNames := []string{"Account A", "Account B", "Account C", "Account D", "Account E"}
+
+	for _, name := range accountNames {
 		arg := CreateAccountParams{
 			UserID:  user.ID,
-			Name:    "Test Account " + string(rune(i+65)), // A, B, C
+			Name:    name,
 			Type:    "Savings",
 			Balance: createRandomNumeric("1000.00"),
 		}
@@ -149,73 +249,129 @@ func TestListAccounts(t *testing.T) {
 		require.NotEmpty(t, account)
 	}
 
-	accounts, err := testQueries.ListAccounts(context.Background(), user.ID)
+	accounts, err := testQueries.ListAccounts(context.Background(), ListAccountsParams{
+		UserID: user.ID,
+		Limit:  2,
+		Offset: 0,
+	})
 	require.NoError(t, err)
-	require.Len(t, accounts, 3)
+	require.Len(t, accounts, 2)
+	assert.Equal(t, "Account A", accounts[0].Name)
+	assert.Equal(t, "Account B", accounts[1].Name)
 
-	for _, account := range accounts {
-		assert.Equal(t, user.ID, account.UserID)
-	}
+	accounts, err = testQueries.ListAccounts(context.Background(), ListAccountsParams{
+		UserID: user.ID,
+		Limit:  2,
+		Offset: 2,
+	})
+	require.NoError(t, err)
+	require.Len(t, accounts, 2)
+	assert.Equal(t, "Account C", accounts[0].Name)
+	assert.Equal(t, "Account D", accounts[1].Name)
+
+	accounts, err = testQueries.ListAccounts(context.Background(), ListAccountsParams{
+		UserID: user.ID,
+		Limit:  2,
+		Offset: 4,
+	})
+	require.NoError(t, err)
+	require.Len(t, accounts, 1)
+	assert.Equal(t, "Account E", accounts[0].Name)
 }
 
 func TestUpdateAccount(t *testing.T) {
-	createdAccount := createRandomAccount(t)
 
-	arg := UpdateAccountParams{
+	user := createTestUser(t)
+
+	arg := CreateAccountParams{
+		UserID:  user.ID,
+		Name:    "Test Account",
+		Type:    "Savings",
+		Balance: createRandomNumeric("1000.00"),
+	}
+
+	createdAccount, err := testQueries.CreateAccount(context.Background(), arg)
+	require.NoError(t, err)
+	require.NotEmpty(t, createdAccount)
+
+	updateArg := UpdateAccountParams{
 		ID:     createdAccount.ID,
 		Name:   "Updated Account Name",
 		Type:   "Checking",
-		UserID: createdAccount.UserID,
+		UserID: user.ID,
 	}
 
-	updatedAccount, err := testQueries.UpdateAccount(context.Background(), arg)
+	updatedAccount, err := testQueries.UpdateAccount(context.Background(), updateArg)
 	require.NoError(t, err)
 	require.NotEmpty(t, updatedAccount)
 
-	assert.Equal(t, arg.Name, updatedAccount.Name)
-	assert.Equal(t, arg.Type, updatedAccount.Type)
+	assert.Equal(t, updateArg.Name, updatedAccount.Name)
+	assert.Equal(t, updateArg.Type, updatedAccount.Type)
+	assert.Equal(t, user.ID, updatedAccount.UserID)
 
-	// Compare numeric values (should remain unchanged)
 	assertNumericEqual(t, createdAccount.Balance, updatedAccount.Balance, "balance should remain unchanged")
 
-	// Compare time values properly
 	createdTime := toTime(createdAccount.UpdatedAt)
 	updatedTime := toTime(updatedAccount.UpdatedAt)
 	assert.True(t, updatedTime.After(createdTime) || updatedTime.Equal(createdTime))
 }
 
 func TestDeleteAccount(t *testing.T) {
-	createdAccount := createRandomAccount(t)
 
-	arg := DeleteAccountParams{
-		ID:     createdAccount.ID,
-		UserID: createdAccount.UserID,
+	user := createTestUser(t)
+
+	arg := CreateAccountParams{
+		UserID:  user.ID,
+		Name:    "Test Account",
+		Type:    "Savings",
+		Balance: createRandomNumeric("1000.00"),
 	}
 
-	err := testQueries.DeleteAccount(context.Background(), arg)
+	createdAccount, err := testQueries.CreateAccount(context.Background(), arg)
+	require.NoError(t, err)
+	require.NotEmpty(t, createdAccount)
+
+	deleteArg := DeleteAccountParams{
+		ID:     createdAccount.ID,
+		UserID: user.ID,
+	}
+
+	err = testQueries.DeleteAccount(context.Background(), deleteArg)
 	require.NoError(t, err)
 
-	// Try to get the deleted account
-	_, err = testQueries.GetAccount(context.Background(), GetAccountParams{
+	getArg := GetAccountParams{
 		ID:     createdAccount.ID,
-		UserID: createdAccount.UserID,
-	})
+		UserID: user.ID,
+	}
+
+	_, err = testQueries.GetAccount(context.Background(), getArg)
 	assert.Error(t, err)
 }
 
 func TestUpdateAccountBalance(t *testing.T) {
-	createdAccount := createRandomAccount(t)
 
-	arg := UpdateAccountBalanceParams{
+	user := createTestUser(t)
+
+	arg := CreateAccountParams{
+		UserID:  user.ID,
+		Name:    "Test Account",
+		Type:    "Savings",
+		Balance: createRandomNumeric("1000.00"),
+	}
+
+	createdAccount, err := testQueries.CreateAccount(context.Background(), arg)
+	require.NoError(t, err)
+	require.NotEmpty(t, createdAccount)
+
+	updateArg := UpdateAccountBalanceParams{
 		ID:     createdAccount.ID,
 		Amount: createRandomNumeric("500.00"),
 	}
 
-	updatedAccount, err := testQueries.UpdateAccountBalance(context.Background(), arg)
+	updatedAccount, err := testQueries.UpdateAccountBalance(context.Background(), updateArg)
 	require.NoError(t, err)
 	require.NotEmpty(t, updatedAccount)
 
-	// Compare numeric values - should be 1500.00 (1000 + 500)
 	expectedBalance := createRandomNumeric("1500.00")
 	assertNumericEqual(t, expectedBalance, updatedAccount.Balance, "balance should be 1500.00")
 }
