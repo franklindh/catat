@@ -67,6 +67,20 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/accounts", s.listAccounts)
 	s.router.PUT("/accounts", s.updateAccount)
 	s.router.DELETE("/accounts/:id", s.deleteAccount)
+
+	s.router.POST("/users", s.createUser)
+	s.router.GET("/users/:id", s.getUserByID)
+	s.router.GET("/users", s.getUserByEmail)
+	s.router.GET("/users/list", s.listUsers)
+	s.router.PUT("/users", s.updateUser)
+	s.router.DELETE("/users/:id", s.deleteUser)
+
+	s.router.POST("/categories", s.createCategory)
+	s.router.GET("/categories/:id", s.getCategory)
+	s.router.GET("/categories", s.listCategories)
+	s.router.GET("/categories/sub", s.listSubCategories)
+	s.router.PUT("/categories", s.updateCategory)
+	s.router.DELETE("/categories/:id", s.deleteCategory)
 }
 
 func (s *Server) Start(address string) error {

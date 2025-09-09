@@ -27,8 +27,8 @@ func toTime(t pgtype.Timestamptz) time.Time {
 
 func createTestUser(t *testing.T) User {
 	arg := CreateUserParams{
-		Email:        "test" + uuid.New().String() + "@example.com",
-		PasswordHash: "hashed_password_123",
+		Email:    "test" + uuid.New().String() + "@example.com",
+		Password: "hashed_password_123",
 	}
 
 	user, err := testQueries.CreateUser(context.Background(), arg)
