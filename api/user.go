@@ -1,0 +1,191 @@
+package api
+
+import (
+	"net/http"
+
+	db "github.com/franklindh/catat/db/sqlc"
+	"github.com/franklindh/catat/util"
+	"github.com/gin-gonic/gin"
+)
+
+type createUserRequest struct {
+	Email    string `json:"email" binding:"required,email"`
+	Name     string `json:"name" binding:"required"`
+	Password string `json:"password" binding:"required,min=6"`
+}
+
+type getUserRequest struct {
+	ID string `uri:"id" binding:"required,uuid"`
+}
+
+type getUserByEmailRequest struct {
+	Email string `form:"email" binding:"required,email"`
+}
+
+type listUsersRequest struct {
+	Page  int `form:"page"`
+	Limit int `form:"limit"`
+}
+
+type updateUserRequest struct {
+	ID    string `json:"id" binding:"required,uuid"`
+	Email string `json:"email" binding:"required,email"`
+	Name  string `json:"name" binding:"required"`
+}
+
+type deleteUserRequest struct {
+	ID string `uri:"id" binding:"required,uuid"`
+}
+
+func (s *Server) createUser(ctx *gin.Context) {
+	var req createUserRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+		return
+	}
+
+	arg := db.CreateUserParams{
+		Email:    req.Email,
+		Name:     req.Name,
+		Password: req.Password,
+	}
+
+	user, err := s.queries.CreateUser(ctx, arg)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, user)
+}
+
+func (s *Server) getUserByID(ctx *gin.Context) {
+	var req getUserRequest
+	if err := ctx.ShouldBindUri(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+		return
+	}
+
+	userID, err := util.ParseUUID(req.ID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid user ID format"))
+		return
+	}
+
+	user, err := s.queries.GetUserByID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, user)
+}
+
+func (s *Server) getUserByEmail(ctx *gin.Context) {
+	var req getUserByEmailRequest
+	if err := ctx.ShouldBindQuery(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+		return
+	}
+
+	user, err := s.queries.GetUserByEmail(ctx, req.Email)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, user)
+}
+
+func (s *Server) listUsers(ctx *gin.Context) {
+	var req listUsersRequest
+	if err := ctx.ShouldBindQuery(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+		return
+	}
+
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.Limit <= 0 {
+		req.Limit = 10
+	}
+	if req.Limit > 100 {
+		req.Limit = 100
+	}
+
+	offset := (req.Page - 1) * req.Limit
+
+	users, err := s.queries.ListUsers(ctx, db.ListUsersParams{
+		Limit:  int32(req.Limit),
+		Offset: int32(offset),
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
+		return
+	}
+
+	total := int64(len(users)) // Note: You might want to add a CountUsers query
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"data": users,
+		"pagination": gin.H{
+			"page":        req.Page,
+			"limit":       req.Limit,
+			"total":       total,
+			"totalPages":  (int(total) + req.Limit - 1) / req.Limit,
+			"hasNext":     req.Page*req.Limit < int(total),
+			"hasPrevious": req.Page > 1,
+		},
+	})
+}
+
+func (s *Server) updateUser(ctx *gin.Context) {
+	var req updateUserRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+		return
+	}
+
+	userID, err := util.ParseUUID(req.ID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid user ID format"))
+		return
+	}
+
+	arg := db.UpdateUserParams{
+		ID:    userID,
+		Email: req.Email,
+		Name:  req.Name,
+	}
+
+	user, err := s.queries.UpdateUser(ctx, arg)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, user)
+}
+
+func (s *Server) deleteUser(ctx *gin.Context) {
+	var req deleteUserRequest
+	if err := ctx.ShouldBindUri(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+		return
+	}
+
+	userID, err := util.ParseUUID(req.ID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid user ID format"))
+		return
+	}
+
+	err = s.queries.DeleteUser(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "user deleted successfully"})
+}

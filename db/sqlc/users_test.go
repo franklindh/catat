@@ -13,8 +13,9 @@ import (
 
 func createRandomUser(t *testing.T) User {
 	arg := CreateUserParams{
-		Email:        "test" + uuid.New().String() + "@example.com",
-		PasswordHash: "hashed_password_123",
+		Email:    "test" + uuid.New().String() + "@icikiwir.com",
+		Name:     "Jamaludin",
+		Password: "hashed_password_123",
 	}
 
 	user, err := testQueries.CreateUser(context.Background(), arg)
@@ -22,9 +23,8 @@ func createRandomUser(t *testing.T) User {
 	require.NotEmpty(t, user)
 
 	assert.Equal(t, arg.Email, user.Email)
-	assert.Equal(t, arg.PasswordHash, user.PasswordHash)
-	assert.WithinDuration(t, time.Now(), toTime(user.CreatedAt), 5*time.Second)
-	assert.WithinDuration(t, time.Now(), toTime(user.UpdatedAt), 5*time.Second)
+	assert.WithinDuration(t, time.Now(), user.CreatedAt.Time, 5*time.Second)
+	assert.WithinDuration(t, time.Now(), user.UpdatedAt.Time, 5*time.Second)
 
 	return user
 }
@@ -42,7 +42,7 @@ func TestGetUserByEmail(t *testing.T) {
 
 	assert.Equal(t, createdUser.ID, user.ID)
 	assert.Equal(t, createdUser.Email, user.Email)
-	assert.Equal(t, createdUser.PasswordHash, user.PasswordHash)
+	assert.Equal(t, createdUser.Password, user.Password)
 	assert.Equal(t, createdUser.CreatedAt, user.CreatedAt)
 	assert.Equal(t, createdUser.UpdatedAt, user.UpdatedAt)
 }
@@ -56,13 +56,13 @@ func TestGetUserByID(t *testing.T) {
 
 	assert.Equal(t, createdUser.ID, user.ID)
 	assert.Equal(t, createdUser.Email, user.Email)
-	assert.Equal(t, createdUser.PasswordHash, user.PasswordHash)
+	assert.Equal(t, createdUser.Password, user.Password)
 	assert.Equal(t, createdUser.CreatedAt, user.CreatedAt)
 	assert.Equal(t, createdUser.UpdatedAt, user.UpdatedAt)
 }
 
 func TestGetUserByEmailNotFound(t *testing.T) {
-	_, err := testQueries.GetUserByEmail(context.Background(), "nonexistent@example.com")
+	_, err := testQueries.GetUserByEmail(context.Background(), "tes@icikiwir.com")
 	assert.Error(t, err)
 }
 
@@ -76,10 +76,101 @@ func TestCreateUserDuplicateEmail(t *testing.T) {
 	user := createRandomUser(t)
 
 	arg := CreateUserParams{
-		Email:        user.Email,
-		PasswordHash: "another_hash",
+		Email:    user.Email,
+		Name:     user.Name,
+		Password: "another_hash",
 	}
 
 	_, err := testQueries.CreateUser(context.Background(), arg)
 	assert.Error(t, err)
+}
+
+func TestUpdateUser(t *testing.T) {
+
+	oldUser := createRandomUser(t)
+
+	newEmail := "updated" + uuid.New().String() + "@icikiwir.com"
+
+	nameChanged := oldUser.Name + " " + "berubah"
+
+	arg := UpdateUserParams{
+		ID:    oldUser.ID,
+		Email: newEmail,
+		Name:  nameChanged,
+	}
+
+	updatedUser, err := testQueries.UpdateUser(context.Background(), arg)
+	require.NoError(t, err)
+	require.NotEmpty(t, updatedUser)
+
+	assert.Equal(t, oldUser.ID, updatedUser.ID)
+	assert.Equal(t, newEmail, updatedUser.Email)
+	assert.Equal(t, oldUser.CreatedAt, updatedUser.CreatedAt)
+
+	assert.True(t, updatedUser.UpdatedAt.Time.Equal(oldUser.UpdatedAt.Time) ||
+		updatedUser.UpdatedAt.Time.After(oldUser.UpdatedAt.Time))
+}
+
+func TestUpdateUserNotFound(t *testing.T) {
+	randomID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
+	arg := UpdateUserParams{
+		ID:    randomID,
+		Email: "updated@icikiwir.com",
+		Name:  "test",
+	}
+
+	_, err := testQueries.UpdateUser(context.Background(), arg)
+	assert.Error(t, err)
+}
+
+func TestDeleteUser(t *testing.T) {
+
+	user := createRandomUser(t)
+
+	err := testQueries.DeleteUser(context.Background(), user.ID)
+	require.NoError(t, err)
+
+	_, err = testQueries.GetUserByID(context.Background(), user.ID)
+	assert.Error(t, err)
+}
+
+func TestDeleteUserNotFound(t *testing.T) {
+	randomID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
+	err := testQueries.DeleteUser(context.Background(), randomID)
+	require.NoError(t, err)
+}
+
+func TestListUsers(t *testing.T) {
+
+	for i := 0; i < 5; i++ {
+		createRandomUser(t)
+	}
+
+	arg := ListUsersParams{
+		Limit:  3,
+		Offset: 0,
+	}
+
+	users, err := testQueries.ListUsers(context.Background(), arg)
+	require.NoError(t, err)
+	require.Len(t, users, 3)
+
+	arg.Offset = 2
+	users, err = testQueries.ListUsers(context.Background(), arg)
+	require.NoError(t, err)
+	require.Len(t, users, 3)
+}
+
+func TestListUsersEmpty(t *testing.T) {
+	arg := ListUsersParams{
+		Limit:  10,
+		Offset: 0,
+	}
+
+	users, err := testQueries.ListUsers(context.Background(), arg)
+	require.NoError(t, err)
+
+	assert.NotNil(t, users)
 }
