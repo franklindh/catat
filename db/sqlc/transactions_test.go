@@ -13,8 +13,8 @@ import (
 
 func createTestUserForTransaction(t *testing.T) User {
 	arg := CreateUserParams{
-		Email:        "test" + uuid.New().String() + "@example.com",
-		PasswordHash: "hashed_password_123",
+		Email:    "test" + uuid.New().String() + "@example.com",
+		Password: "hashed_password_123",
 	}
 
 	user, err := testQueries.CreateUser(context.Background(), arg)
@@ -41,10 +41,9 @@ func createTestAccountForTransaction(t *testing.T, userID pgtype.UUID) Account {
 
 func createTestCategoryForTransaction(t *testing.T, userID pgtype.UUID) Category {
 	arg := CreateCategoryParams{
-		UserID:   userID,
-		Name:     "Test Category " + uuid.New().String()[:8],
-		Type:     "expense",
-		ParentID: pgtype.UUID{},
+		UserID: userID,
+		Name:   "Test Category " + uuid.New().String()[:8],
+		Type:   "expense",
 	}
 
 	category, err := testQueries.CreateCategory(context.Background(), arg)

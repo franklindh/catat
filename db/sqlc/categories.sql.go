@@ -15,35 +15,27 @@ const createCategory = `-- name: CreateCategory :one
 INSERT INTO "categories" (
   user_id,
   name,
-  type,
-  parent_id
+  type
 ) VALUES (
-  $1, $2, $3, $4
+  $1, $2, $3
 )
-RETURNING id, user_id, name, type, parent_id, created_at, updated_at
+RETURNING id, user_id, name, type, created_at, updated_at
 `
 
 type CreateCategoryParams struct {
-	UserID   pgtype.UUID
-	Name     string
-	Type     string
-	ParentID pgtype.UUID
+	UserID pgtype.UUID
+	Name   string
+	Type   string
 }
 
 func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error) {
-	row := q.db.QueryRow(ctx, createCategory,
-		arg.UserID,
-		arg.Name,
-		arg.Type,
-		arg.ParentID,
-	)
+	row := q.db.QueryRow(ctx, createCategory, arg.UserID, arg.Name, arg.Type)
 	var i Category
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.Name,
 		&i.Type,
-		&i.ParentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -66,7 +58,7 @@ func (q *Queries) DeleteCategory(ctx context.Context, arg DeleteCategoryParams) 
 }
 
 const getCategory = `-- name: GetCategory :one
-SELECT id, user_id, name, type, parent_id, created_at, updated_at FROM "categories"
+SELECT id, user_id, name, type, created_at, updated_at FROM "categories"
 WHERE id = $1 AND user_id = $2
 `
 
@@ -83,7 +75,6 @@ func (q *Queries) GetCategory(ctx context.Context, arg GetCategoryParams) (Categ
 		&i.UserID,
 		&i.Name,
 		&i.Type,
-		&i.ParentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -91,8 +82,8 @@ func (q *Queries) GetCategory(ctx context.Context, arg GetCategoryParams) (Categ
 }
 
 const listCategories = `-- name: ListCategories :many
-SELECT id, user_id, name, type, parent_id, created_at, updated_at FROM "categories"
-WHERE user_id = $1 AND parent_id IS NULL
+SELECT id, user_id, name, type, created_at, updated_at FROM "categories"
+WHERE user_id = $1
 ORDER BY name
 `
 
@@ -110,46 +101,6 @@ func (q *Queries) ListCategories(ctx context.Context, userID pgtype.UUID) ([]Cat
 			&i.UserID,
 			&i.Name,
 			&i.Type,
-			&i.ParentID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listSubCategories = `-- name: ListSubCategories :many
-SELECT id, user_id, name, type, parent_id, created_at, updated_at FROM "categories"
-WHERE user_id = $1 AND parent_id = $2
-ORDER BY name
-`
-
-type ListSubCategoriesParams struct {
-	UserID   pgtype.UUID
-	ParentID pgtype.UUID
-}
-
-func (q *Queries) ListSubCategories(ctx context.Context, arg ListSubCategoriesParams) ([]Category, error) {
-	rows, err := q.db.Query(ctx, listSubCategories, arg.UserID, arg.ParentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Category
-	for rows.Next() {
-		var i Category
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.Name,
-			&i.Type,
-			&i.ParentID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -168,19 +119,17 @@ UPDATE "categories"
 SET
   name = $2,
   type = $3,
-  parent_id = $4,
   updated_at = now()
 WHERE
-  id = $1 AND user_id = $5
-RETURNING id, user_id, name, type, parent_id, created_at, updated_at
+  id = $1 AND user_id = $4
+RETURNING id, user_id, name, type, created_at, updated_at
 `
 
 type UpdateCategoryParams struct {
-	ID       pgtype.UUID
-	Name     string
-	Type     string
-	ParentID pgtype.UUID
-	UserID   pgtype.UUID
+	ID     pgtype.UUID
+	Name   string
+	Type   string
+	UserID pgtype.UUID
 }
 
 func (q *Queries) UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error) {
@@ -188,7 +137,6 @@ func (q *Queries) UpdateCategory(ctx context.Context, arg UpdateCategoryParams) 
 		arg.ID,
 		arg.Name,
 		arg.Type,
-		arg.ParentID,
 		arg.UserID,
 	)
 	var i Category
@@ -197,7 +145,6 @@ func (q *Queries) UpdateCategory(ctx context.Context, arg UpdateCategoryParams) 
 		&i.UserID,
 		&i.Name,
 		&i.Type,
-		&i.ParentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

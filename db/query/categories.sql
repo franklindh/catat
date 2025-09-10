@@ -2,10 +2,9 @@
 INSERT INTO "categories" (
   user_id,
   name,
-  type,
-  parent_id
+  type
 ) VALUES (
-  $1, $2, $3, $4
+  $1, $2, $3
 )
 RETURNING *;
 
@@ -15,12 +14,7 @@ WHERE id = $1 AND user_id = $2;
 
 -- name: ListCategories :many
 SELECT * FROM "categories"
-WHERE user_id = $1 AND parent_id IS NULL
-ORDER BY name;
-
--- name: ListSubCategories :many
-SELECT * FROM "categories"
-WHERE user_id = $1 AND parent_id = $2
+WHERE user_id = $1
 ORDER BY name;
 
 -- name: UpdateCategory :one
@@ -28,10 +22,9 @@ UPDATE "categories"
 SET
   name = $2,
   type = $3,
-  parent_id = $4,
   updated_at = now()
 WHERE
-  id = $1 AND user_id = $5
+  id = $1 AND user_id = $4
 RETURNING *;
 
 -- name: DeleteCategory :exec

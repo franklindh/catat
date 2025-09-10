@@ -24,9 +24,7 @@ type Category struct {
 	UserID pgtype.UUID
 	Name   string
 	// "income" atau "expense"
-	Type string
-	// Untuk sub-kategori, mereferensikan dirinya sendiri
-	ParentID  pgtype.UUID
+	Type      string
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
 }
