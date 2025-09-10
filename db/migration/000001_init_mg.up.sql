@@ -22,7 +22,6 @@ CREATE TABLE "categories" (
   "user_id" uuid NOT NULL,
   "name" text NOT NULL,
   "type" text NOT NULL,
-  "parent_id" uuid,
   "created_at" timestamptz NOT NULL DEFAULT (now()),
   "updated_at" timestamptz NOT NULL DEFAULT (now())
 );
@@ -54,8 +53,6 @@ COMMENT ON COLUMN "accounts"."type" IS 'Contoh: "depository", "credit", "cash"';
 
 COMMENT ON COLUMN "categories"."type" IS '"income" atau "expense"';
 
-COMMENT ON COLUMN "categories"."parent_id" IS 'Untuk sub-kategori, mereferensikan dirinya sendiri';
-
 COMMENT ON COLUMN "transactions"."amount" IS 'Positif untuk pendapatan, negatif untuk pengeluaran';
 
 COMMENT ON COLUMN "receipts"."image_url" IS 'Path ke file gambar di storage (lokal atau cloud)';
@@ -63,8 +60,6 @@ COMMENT ON COLUMN "receipts"."image_url" IS 'Path ke file gambar di storage (lok
 ALTER TABLE "accounts" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id");
 
 ALTER TABLE "categories" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id");
-
-ALTER TABLE "categories" ADD FOREIGN KEY ("parent_id") REFERENCES "categories" ("id");
 
 ALTER TABLE "transactions" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id");
 
