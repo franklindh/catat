@@ -80,6 +80,14 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/categories", s.listCategories)
 	s.router.PUT("/categories", s.updateCategory)
 	s.router.DELETE("/categories/:id", s.deleteCategory)
+
+	s.router.POST("/transactions", s.createTransaction)
+	s.router.GET("/transactions/:id", s.getTransaction)
+	s.router.GET("/transactions", s.listTransactions)
+	s.router.GET("/transactions/account", s.listTransactionsByAccount)
+	s.router.GET("/transactions/date-range", s.listTransactionsByDateRange)
+	s.router.PUT("/transactions", s.updateTransaction)
+	s.router.DELETE("/transactions/:id", s.deleteTransaction)
 }
 
 func (s *Server) Start(address string) error {
