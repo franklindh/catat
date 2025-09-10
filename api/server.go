@@ -78,7 +78,6 @@ func (s *Server) setupRoutes() {
 	s.router.POST("/categories", s.createCategory)
 	s.router.GET("/categories/:id", s.getCategory)
 	s.router.GET("/categories", s.listCategories)
-	s.router.GET("/categories/sub", s.listSubCategories)
 	s.router.PUT("/categories", s.updateCategory)
 	s.router.DELETE("/categories/:id", s.deleteCategory)
 }
