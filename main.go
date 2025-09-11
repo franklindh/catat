@@ -3,26 +3,20 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 
-	server "github.com/franklindh/catat/api"
+	"github.com/franklindh/catat/api"
+	"github.com/franklindh/catat/util"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/joho/godotenv"
 )
 
 func main() {
-	err := godotenv.Load()
+
+	config, err := util.LoadConfig(".")
 	if err != nil {
-		log.Println("Warning: Error loading .env file, using default environment variables")
+		log.Fatal("cannot load config:", err)
 	}
 
-	dbURL := os.Getenv("DB_URL")
-	if dbURL == "" {
-		dbURL = "postgresql://postgres:password@localhost:5432/catat_db?sslmode=disable"
-		log.Println("Using default database URL")
-	}
-
-	conn, err := pgxpool.New(context.Background(), dbURL)
+	conn, err := pgxpool.New(context.Background(), config.DBSource)
 	if err != nil {
 		log.Fatal("cannot connect to db:", err)
 	}
@@ -34,14 +28,10 @@ func main() {
 
 	log.Println("Database connected successfully")
 
-	server := server.NewServer(conn)
+	server := api.NewServer(conn)
 
-	address := os.Getenv("SERVER_ADDR")
-	if address == "" {
-		address = ":3000"
-	}
-
-	if err := server.Start(address); err != nil {
+	log.Printf("Starting server on %s", config.ServerAddress)
+	if err := server.Start(config.ServerAddress); err != nil {
 		log.Fatal("cannot start server:", err)
 	}
 }
