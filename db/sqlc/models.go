@@ -9,52 +9,52 @@ import (
 )
 
 type Account struct {
-	ID     pgtype.UUID
-	UserID pgtype.UUID
-	Name   string
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+	Name   string      `json:"name"`
 	// Contoh: "depository", "credit", "cash"
-	Type      string
-	Balance   pgtype.Numeric
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	Type      string             `json:"type"`
+	Balance   pgtype.Numeric     `json:"balance"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Category struct {
-	ID     pgtype.UUID
-	UserID pgtype.UUID
-	Name   string
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+	Name   string      `json:"name"`
 	// "income" atau "expense"
-	Type      string
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	Type      string             `json:"type"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Receipt struct {
-	ID            pgtype.UUID
-	TransactionID pgtype.UUID
+	ID            pgtype.UUID `json:"id"`
+	TransactionID pgtype.UUID `json:"transaction_id"`
 	// Path ke file gambar di storage (lokal atau cloud)
-	ImageUrl  string
-	RawText   pgtype.Text
-	CreatedAt pgtype.Timestamptz
+	ImageUrl  string             `json:"image_url"`
+	RawText   pgtype.Text        `json:"raw_text"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type Transaction struct {
-	ID         pgtype.UUID
-	UserID     pgtype.UUID
-	AccountID  pgtype.UUID
-	CategoryID pgtype.UUID
+	ID         pgtype.UUID `json:"id"`
+	UserID     pgtype.UUID `json:"user_id"`
+	AccountID  pgtype.UUID `json:"account_id"`
+	CategoryID pgtype.UUID `json:"category_id"`
 	// Positif untuk pendapatan, negatif untuk pengeluaran
-	Amount          pgtype.Numeric
-	Description     string
-	TransactionDate pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
+	Amount          pgtype.Numeric     `json:"amount"`
+	Description     string             `json:"description"`
+	TransactionDate pgtype.Timestamptz `json:"transaction_date"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 type User struct {
-	ID        pgtype.UUID
-	Email     string
-	Name      string
-	Password  string
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	ID        pgtype.UUID        `json:"id"`
+	Email     string             `json:"email"`
+	Name      string             `json:"name"`
+	Password  string             `json:"password"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }

@@ -23,9 +23,9 @@ RETURNING id, transaction_id, image_url, raw_text, created_at
 `
 
 type CreateReceiptParams struct {
-	TransactionID pgtype.UUID
-	ImageUrl      string
-	RawText       pgtype.Text
+	TransactionID pgtype.UUID `json:"transaction_id"`
+	ImageUrl      string      `json:"image_url"`
+	RawText       pgtype.Text `json:"raw_text"`
 }
 
 func (q *Queries) CreateReceipt(ctx context.Context, arg CreateReceiptParams) (Receipt, error) {

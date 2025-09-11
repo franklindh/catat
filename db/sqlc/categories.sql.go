@@ -23,9 +23,9 @@ RETURNING id, user_id, name, type, created_at, updated_at
 `
 
 type CreateCategoryParams struct {
-	UserID pgtype.UUID
-	Name   string
-	Type   string
+	UserID pgtype.UUID `json:"user_id"`
+	Name   string      `json:"name"`
+	Type   string      `json:"type"`
 }
 
 func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error) {
@@ -48,8 +48,8 @@ WHERE id = $1 AND user_id = $2
 `
 
 type DeleteCategoryParams struct {
-	ID     pgtype.UUID
-	UserID pgtype.UUID
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) DeleteCategory(ctx context.Context, arg DeleteCategoryParams) error {
@@ -63,8 +63,8 @@ WHERE id = $1 AND user_id = $2
 `
 
 type GetCategoryParams struct {
-	ID     pgtype.UUID
-	UserID pgtype.UUID
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) GetCategory(ctx context.Context, arg GetCategoryParams) (Category, error) {
@@ -93,7 +93,7 @@ func (q *Queries) ListCategories(ctx context.Context, userID pgtype.UUID) ([]Cat
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Category
+	items := []Category{}
 	for rows.Next() {
 		var i Category
 		if err := rows.Scan(
@@ -126,10 +126,10 @@ RETURNING id, user_id, name, type, created_at, updated_at
 `
 
 type UpdateCategoryParams struct {
-	ID     pgtype.UUID
-	Name   string
-	Type   string
-	UserID pgtype.UUID
+	ID     pgtype.UUID `json:"id"`
+	Name   string      `json:"name"`
+	Type   string      `json:"type"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error) {

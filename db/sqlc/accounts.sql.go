@@ -37,10 +37,10 @@ RETURNING id, user_id, name, type, balance, created_at, updated_at
 `
 
 type CreateAccountParams struct {
-	UserID  pgtype.UUID
-	Name    string
-	Type    string
-	Balance pgtype.Numeric
+	UserID  pgtype.UUID    `json:"user_id"`
+	Name    string         `json:"name"`
+	Type    string         `json:"type"`
+	Balance pgtype.Numeric `json:"balance"`
 }
 
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
@@ -69,8 +69,8 @@ WHERE id = $1 AND user_id = $2
 `
 
 type DeleteAccountParams struct {
-	ID     pgtype.UUID
-	UserID pgtype.UUID
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) DeleteAccount(ctx context.Context, arg DeleteAccountParams) error {
@@ -84,8 +84,8 @@ WHERE id = $1 AND user_id = $2
 `
 
 type GetAccountParams struct {
-	ID     pgtype.UUID
-	UserID pgtype.UUID
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) GetAccount(ctx context.Context, arg GetAccountParams) (Account, error) {
@@ -111,9 +111,9 @@ LIMIT $2 OFFSET $3
 `
 
 type ListAccountsParams struct {
-	UserID pgtype.UUID
-	Limit  int32
-	Offset int32
+	UserID pgtype.UUID `json:"user_id"`
+	Limit  int32       `json:"limit"`
+	Offset int32       `json:"offset"`
 }
 
 func (q *Queries) ListAccounts(ctx context.Context, arg ListAccountsParams) ([]Account, error) {
@@ -122,7 +122,7 @@ func (q *Queries) ListAccounts(ctx context.Context, arg ListAccountsParams) ([]A
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Account
+	items := []Account{}
 	for rows.Next() {
 		var i Account
 		if err := rows.Scan(
@@ -156,10 +156,10 @@ RETURNING id, user_id, name, type, balance, created_at, updated_at
 `
 
 type UpdateAccountParams struct {
-	ID     pgtype.UUID
-	Name   string
-	Type   string
-	UserID pgtype.UUID
+	ID     pgtype.UUID `json:"id"`
+	Name   string      `json:"name"`
+	Type   string      `json:"type"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error) {
@@ -190,8 +190,8 @@ RETURNING id, user_id, name, type, balance, created_at, updated_at
 `
 
 type UpdateAccountBalanceParams struct {
-	ID     pgtype.UUID
-	Amount pgtype.Numeric
+	ID     pgtype.UUID    `json:"id"`
+	Amount pgtype.Numeric `json:"amount"`
 }
 
 func (q *Queries) UpdateAccountBalance(ctx context.Context, arg UpdateAccountBalanceParams) (Account, error) {

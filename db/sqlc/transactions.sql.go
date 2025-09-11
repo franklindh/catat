@@ -26,12 +26,12 @@ RETURNING id, user_id, account_id, category_id, amount, description, transaction
 `
 
 type CreateTransactionParams struct {
-	UserID          pgtype.UUID
-	AccountID       pgtype.UUID
-	CategoryID      pgtype.UUID
-	Amount          pgtype.Numeric
-	Description     string
-	TransactionDate pgtype.Timestamptz
+	UserID          pgtype.UUID        `json:"user_id"`
+	AccountID       pgtype.UUID        `json:"account_id"`
+	CategoryID      pgtype.UUID        `json:"category_id"`
+	Amount          pgtype.Numeric     `json:"amount"`
+	Description     string             `json:"description"`
+	TransactionDate pgtype.Timestamptz `json:"transaction_date"`
 }
 
 func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error) {
@@ -63,8 +63,8 @@ WHERE id = $1 AND user_id = $2
 `
 
 type DeleteTransactionParams struct {
-	ID     pgtype.UUID
-	UserID pgtype.UUID
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) DeleteTransaction(ctx context.Context, arg DeleteTransactionParams) error {
@@ -78,8 +78,8 @@ WHERE id = $1 AND user_id = $2
 `
 
 type GetTransactionParams struct {
-	ID     pgtype.UUID
-	UserID pgtype.UUID
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
 }
 
 func (q *Queries) GetTransaction(ctx context.Context, arg GetTransactionParams) (Transaction, error) {
@@ -107,9 +107,9 @@ OFFSET $3
 `
 
 type ListTransactionsParams struct {
-	UserID pgtype.UUID
-	Limit  int32
-	Offset int32
+	UserID pgtype.UUID `json:"user_id"`
+	Limit  int32       `json:"limit"`
+	Offset int32       `json:"offset"`
 }
 
 func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsParams) ([]Transaction, error) {
@@ -118,7 +118,7 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Transaction
+	items := []Transaction{}
 	for rows.Next() {
 		var i Transaction
 		if err := rows.Scan(
@@ -150,10 +150,10 @@ OFFSET $4
 `
 
 type ListTransactionsByAccountParams struct {
-	UserID    pgtype.UUID
-	AccountID pgtype.UUID
-	Limit     int32
-	Offset    int32
+	UserID    pgtype.UUID `json:"user_id"`
+	AccountID pgtype.UUID `json:"account_id"`
+	Limit     int32       `json:"limit"`
+	Offset    int32       `json:"offset"`
 }
 
 func (q *Queries) ListTransactionsByAccount(ctx context.Context, arg ListTransactionsByAccountParams) ([]Transaction, error) {
@@ -167,7 +167,7 @@ func (q *Queries) ListTransactionsByAccount(ctx context.Context, arg ListTransac
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Transaction
+	items := []Transaction{}
 	for rows.Next() {
 		var i Transaction
 		if err := rows.Scan(
@@ -200,9 +200,9 @@ ORDER BY transaction_date DESC
 `
 
 type ListTransactionsByDateRangeParams struct {
-	UserID            pgtype.UUID
-	TransactionDate   pgtype.Timestamptz
-	TransactionDate_2 pgtype.Timestamptz
+	UserID            pgtype.UUID        `json:"user_id"`
+	TransactionDate   pgtype.Timestamptz `json:"transaction_date"`
+	TransactionDate_2 pgtype.Timestamptz `json:"transaction_date_2"`
 }
 
 func (q *Queries) ListTransactionsByDateRange(ctx context.Context, arg ListTransactionsByDateRangeParams) ([]Transaction, error) {
@@ -211,7 +211,7 @@ func (q *Queries) ListTransactionsByDateRange(ctx context.Context, arg ListTrans
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Transaction
+	items := []Transaction{}
 	for rows.Next() {
 		var i Transaction
 		if err := rows.Scan(
@@ -248,13 +248,13 @@ RETURNING id, user_id, account_id, category_id, amount, description, transaction
 `
 
 type UpdateTransactionParams struct {
-	ID              pgtype.UUID
-	AccountID       pgtype.UUID
-	CategoryID      pgtype.UUID
-	Amount          pgtype.Numeric
-	Description     string
-	TransactionDate pgtype.Timestamptz
-	UserID          pgtype.UUID
+	ID              pgtype.UUID        `json:"id"`
+	AccountID       pgtype.UUID        `json:"account_id"`
+	CategoryID      pgtype.UUID        `json:"category_id"`
+	Amount          pgtype.Numeric     `json:"amount"`
+	Description     string             `json:"description"`
+	TransactionDate pgtype.Timestamptz `json:"transaction_date"`
+	UserID          pgtype.UUID        `json:"user_id"`
 }
 
 func (q *Queries) UpdateTransaction(ctx context.Context, arg UpdateTransactionParams) (Transaction, error) {
