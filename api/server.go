@@ -16,13 +16,11 @@ import (
 )
 
 type Server struct {
-	db      *pgxpool.Pool
-	router  *gin.Engine
-	queries *db.Queries
+	store  db.Store
+	router *gin.Engine
 }
 
 func NewServer(dbPool *pgxpool.Pool) *Server {
-
 	if err := godotenv.Load(); err != nil {
 		log.Println("Warning: Error loading .env file")
 	}
@@ -36,10 +34,12 @@ func NewServer(dbPool *pgxpool.Pool) *Server {
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
 
+	// Create store from db pool
+	store := db.NewStore(dbPool)
+
 	server := &Server{
-		db:      dbPool,
-		router:  router,
-		queries: db.New(dbPool),
+		store:  store,
+		router: router,
 	}
 
 	server.setupRoutes()
@@ -47,7 +47,6 @@ func NewServer(dbPool *pgxpool.Pool) *Server {
 }
 
 func (s *Server) setupRoutes() {
-
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
@@ -62,12 +61,14 @@ func (s *Server) setupRoutes() {
 		})
 	})
 
+	// Account routes
 	s.router.POST("/accounts", s.createAccount)
 	s.router.GET("/accounts/:id", s.getAccount)
 	s.router.GET("/accounts", s.listAccounts)
 	s.router.PUT("/accounts", s.updateAccount)
 	s.router.DELETE("/accounts/:id", s.deleteAccount)
 
+	// User routes
 	s.router.POST("/users", s.createUser)
 	s.router.GET("/users/:id", s.getUserByID)
 	s.router.GET("/users", s.getUserByEmail)
@@ -75,12 +76,14 @@ func (s *Server) setupRoutes() {
 	s.router.PUT("/users", s.updateUser)
 	s.router.DELETE("/users/:id", s.deleteUser)
 
+	// Category routes
 	s.router.POST("/categories", s.createCategory)
 	s.router.GET("/categories/:id", s.getCategory)
 	s.router.GET("/categories", s.listCategories)
 	s.router.PUT("/categories", s.updateCategory)
 	s.router.DELETE("/categories/:id", s.deleteCategory)
 
+	// Transaction routes
 	s.router.POST("/transactions", s.createTransaction)
 	s.router.GET("/transactions/:id", s.getTransaction)
 	s.router.GET("/transactions", s.listTransactions)
@@ -88,10 +91,14 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/transactions/date-range", s.listTransactionsByDateRange)
 	s.router.PUT("/transactions", s.updateTransaction)
 	s.router.DELETE("/transactions/:id", s.deleteTransaction)
+
+	// Receipt routes
+	s.router.POST("/receipts", s.createReceipt)
+	s.router.GET("/receipts/transaction/:transaction_id", s.getReceiptByTransactionID)
+	s.router.DELETE("/receipts/:id", s.deleteReceipt)
 }
 
 func (s *Server) Start(address string) error {
-
 	server := &http.Server{
 		Addr:    address,
 		Handler: s.router,
@@ -124,10 +131,7 @@ func (s *Server) Start(address string) error {
 	return nil
 }
 
-func (s *Server) GetDB() *pgxpool.Pool {
-	return s.db
-}
-
-func (s *Server) GetQueries() *db.Queries {
-	return s.queries
+// Getter methods (jika masih dibutuhkan untuk backward compatibility)
+func (s *Server) GetStore() db.Store {
+	return s.store
 }

@@ -49,11 +49,6 @@ type updateTransactionRequest struct {
 	TransactionDate time.Time `json:"transaction_date" binding:"required"`
 }
 
-type deleteTransactionRequest struct {
-	ID     string `uri:"id" binding:"required,uuid"`
-	UserID string `form:"user_id" binding:"required,uuid"`
-}
-
 func (s *Server) createTransaction(ctx *gin.Context) {
 	var req createTransactionRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -99,7 +94,7 @@ func (s *Server) createTransaction(ctx *gin.Context) {
 		TransactionDate: transactionDate,
 	}
 
-	transaction, err := s.queries.CreateTransaction(ctx, arg)
+	transaction, err := s.store.CreateTransaction(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -142,7 +137,7 @@ func (s *Server) getTransaction(ctx *gin.Context) {
 		UserID: userID,
 	}
 
-	transaction, err := s.queries.GetTransaction(ctx, arg)
+	transaction, err := s.store.GetTransaction(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -176,7 +171,7 @@ func (s *Server) listTransactions(ctx *gin.Context) {
 
 	offset := (req.Page - 1) * req.Limit
 
-	transactions, err := s.queries.ListTransactions(ctx, db.ListTransactionsParams{
+	transactions, err := s.store.ListTransactions(ctx, db.ListTransactionsParams{
 		UserID: userID,
 		Limit:  int32(req.Limit),
 		Offset: int32(offset),
@@ -220,7 +215,7 @@ func (s *Server) listTransactionsByAccount(ctx *gin.Context) {
 
 	offset := (req.Page - 1) * req.Limit
 
-	transactions, err := s.queries.ListTransactionsByAccount(ctx, db.ListTransactionsByAccountParams{
+	transactions, err := s.store.ListTransactionsByAccount(ctx, db.ListTransactionsByAccountParams{
 		UserID:    userID,
 		AccountID: accountID,
 		Limit:     int32(req.Limit),
@@ -257,7 +252,7 @@ func (s *Server) listTransactionsByDateRange(ctx *gin.Context) {
 		Valid: true,
 	}
 
-	transactions, err := s.queries.ListTransactionsByDateRange(ctx, db.ListTransactionsByDateRangeParams{
+	transactions, err := s.store.ListTransactionsByDateRange(ctx, db.ListTransactionsByDateRangeParams{
 		UserID:            userID,
 		TransactionDate:   startDate,
 		TransactionDate_2: endDate,
@@ -322,7 +317,7 @@ func (s *Server) updateTransaction(ctx *gin.Context) {
 		UserID:          userID,
 	}
 
-	transaction, err := s.queries.UpdateTransaction(ctx, arg)
+	transaction, err := s.store.UpdateTransaction(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -365,7 +360,7 @@ func (s *Server) deleteTransaction(ctx *gin.Context) {
 		UserID: userID,
 	}
 
-	err = s.queries.DeleteTransaction(ctx, arg)
+	err = s.store.DeleteTransaction(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return

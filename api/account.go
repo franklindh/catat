@@ -65,7 +65,7 @@ func (s *Server) createAccount(ctx *gin.Context) {
 		Balance: createZeroBalance(),
 	}
 
-	account, err := s.queries.CreateAccount(ctx, arg)
+	account, err := s.store.CreateAccount(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -97,7 +97,7 @@ func (s *Server) getAccount(ctx *gin.Context) {
 		UserID: userID,
 	}
 
-	account, err := s.queries.GetAccount(ctx, arg)
+	account, err := s.store.GetAccount(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -131,7 +131,7 @@ func (s *Server) listAccounts(ctx *gin.Context) {
 
 	offset := (req.Page - 1) * req.Limit
 
-	accounts, err := s.queries.ListAccounts(ctx, db.ListAccountsParams{
+	accounts, err := s.store.ListAccounts(ctx, db.ListAccountsParams{
 		UserID: userID,
 		Limit:  int32(req.Limit),
 		Offset: int32(offset),
@@ -141,7 +141,7 @@ func (s *Server) listAccounts(ctx *gin.Context) {
 		return
 	}
 
-	total, err := s.queries.CountAccountsByUser(ctx, userID)
+	total, err := s.store.CountAccountsByUser(ctx, userID)
 	if err != nil {
 
 		ctx.JSON(http.StatusOK, gin.H{
@@ -191,7 +191,7 @@ func (s *Server) updateAccount(ctx *gin.Context) {
 		UserID: userID,
 	}
 
-	account, err := s.queries.UpdateAccount(ctx, arg)
+	account, err := s.store.UpdateAccount(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -223,7 +223,7 @@ func (s *Server) deleteAccount(ctx *gin.Context) {
 		UserID: userID,
 	}
 
-	err = s.queries.DeleteAccount(ctx, arg)
+	err = s.store.DeleteAccount(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return

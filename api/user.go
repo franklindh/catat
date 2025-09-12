@@ -50,7 +50,7 @@ func (s *Server) createUser(ctx *gin.Context) {
 		Password: req.Password,
 	}
 
-	user, err := s.queries.CreateUser(ctx, arg)
+	user, err := s.store.CreateUser(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -72,7 +72,7 @@ func (s *Server) getUserByID(ctx *gin.Context) {
 		return
 	}
 
-	user, err := s.queries.GetUserByID(ctx, userID)
+	user, err := s.store.GetUserByID(ctx, userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -88,7 +88,7 @@ func (s *Server) getUserByEmail(ctx *gin.Context) {
 		return
 	}
 
-	user, err := s.queries.GetUserByEmail(ctx, req.Email)
+	user, err := s.store.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -116,7 +116,7 @@ func (s *Server) listUsers(ctx *gin.Context) {
 
 	offset := (req.Page - 1) * req.Limit
 
-	users, err := s.queries.ListUsers(ctx, db.ListUsersParams{
+	users, err := s.store.ListUsers(ctx, db.ListUsersParams{
 		Limit:  int32(req.Limit),
 		Offset: int32(offset),
 	})
@@ -159,7 +159,7 @@ func (s *Server) updateUser(ctx *gin.Context) {
 		Name:  req.Name,
 	}
 
-	user, err := s.queries.UpdateUser(ctx, arg)
+	user, err := s.store.UpdateUser(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -181,7 +181,7 @@ func (s *Server) deleteUser(ctx *gin.Context) {
 		return
 	}
 
-	err = s.queries.DeleteUser(ctx, userID)
+	err = s.store.DeleteUser(ctx, userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
