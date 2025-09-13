@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"math/big"
 	"net/http"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -65,7 +67,7 @@ func (s *Server) createAccount(ctx *gin.Context) {
 		Balance: createZeroBalance(),
 	}
 
-	account, err := s.store.CreateAccount(ctx, arg)
+	account, err := s.Store.CreateAccount(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -97,8 +99,12 @@ func (s *Server) getAccount(ctx *gin.Context) {
 		UserID: userID,
 	}
 
-	account, err := s.store.GetAccount(ctx, arg)
+	account, err := s.Store.GetAccount(ctx, arg)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponseWithMessage("account not found"))
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
@@ -131,7 +137,7 @@ func (s *Server) listAccounts(ctx *gin.Context) {
 
 	offset := (req.Page - 1) * req.Limit
 
-	accounts, err := s.store.ListAccounts(ctx, db.ListAccountsParams{
+	accounts, err := s.Store.ListAccounts(ctx, db.ListAccountsParams{
 		UserID: userID,
 		Limit:  int32(req.Limit),
 		Offset: int32(offset),
@@ -141,7 +147,7 @@ func (s *Server) listAccounts(ctx *gin.Context) {
 		return
 	}
 
-	total, err := s.store.CountAccountsByUser(ctx, userID)
+	total, err := s.Store.CountAccountsByUser(ctx, userID)
 	if err != nil {
 
 		ctx.JSON(http.StatusOK, gin.H{
@@ -191,8 +197,12 @@ func (s *Server) updateAccount(ctx *gin.Context) {
 		UserID: userID,
 	}
 
-	account, err := s.store.UpdateAccount(ctx, arg)
+	account, err := s.Store.UpdateAccount(ctx, arg)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponseWithMessage("account not found"))
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
@@ -223,8 +233,12 @@ func (s *Server) deleteAccount(ctx *gin.Context) {
 		UserID: userID,
 	}
 
-	err = s.store.DeleteAccount(ctx, arg)
+	err = s.Store.DeleteAccount(ctx, arg)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponseWithMessage("account not found"))
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}

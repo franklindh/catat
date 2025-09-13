@@ -44,7 +44,7 @@ func (s *Server) createCategory(ctx *gin.Context) {
 		Type:   req.Type,
 	}
 
-	category, err := s.store.CreateCategory(ctx, arg)
+	category, err := s.Store.CreateCategory(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -87,7 +87,7 @@ func (s *Server) getCategory(ctx *gin.Context) {
 		UserID: userID,
 	}
 
-	category, err := s.store.GetCategory(ctx, arg)
+	category, err := s.Store.GetCategory(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -109,7 +109,7 @@ func (s *Server) listCategories(ctx *gin.Context) {
 		return
 	}
 
-	categories, err := s.store.ListCategories(ctx, userID)
+	categories, err := s.Store.ListCategories(ctx, userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -144,7 +144,7 @@ func (s *Server) updateCategory(ctx *gin.Context) {
 		UserID: userID,
 	}
 
-	category, err := s.store.UpdateCategory(ctx, arg)
+	category, err := s.Store.UpdateCategory(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -187,7 +187,7 @@ func (s *Server) deleteCategory(ctx *gin.Context) {
 		UserID: userID,
 	}
 
-	err = s.store.DeleteCategory(ctx, arg)
+	err = s.Store.DeleteCategory(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return

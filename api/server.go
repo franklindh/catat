@@ -16,8 +16,8 @@ import (
 )
 
 type Server struct {
-	store  db.Store
-	router *gin.Engine
+	Store  db.Store
+	Router *gin.Engine
 }
 
 func NewServer(dbPool *pgxpool.Pool) *Server {
@@ -30,16 +30,16 @@ func NewServer(dbPool *pgxpool.Pool) *Server {
 		gin.SetMode(gin.DebugMode)
 	}
 
-	router := gin.New()
-	router.Use(gin.Logger())
-	router.Use(gin.Recovery())
+	Router := gin.New()
+	Router.Use(gin.Logger())
+	Router.Use(gin.Recovery())
 
-	// Create store from db pool
-	store := db.NewStore(dbPool)
+	// Create Store from db pool
+	Store := db.NewStore(dbPool)
 
 	server := &Server{
-		store:  store,
-		router: router,
+		Store:  Store,
+		Router: Router,
 	}
 
 	server.setupRoutes()
@@ -47,14 +47,14 @@ func NewServer(dbPool *pgxpool.Pool) *Server {
 }
 
 func (s *Server) setupRoutes() {
-	s.router.GET("/health", func(c *gin.Context) {
+	s.Router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
 			"message": "Catat API is running",
 		})
 	})
 
-	s.router.GET("/", func(c *gin.Context) {
+	s.Router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Welcome to Catat API",
 			"version": "1.0.0",
@@ -62,46 +62,46 @@ func (s *Server) setupRoutes() {
 	})
 
 	// Account routes
-	s.router.POST("/accounts", s.createAccount)
-	s.router.GET("/accounts/:id", s.getAccount)
-	s.router.GET("/accounts", s.listAccounts)
-	s.router.PUT("/accounts", s.updateAccount)
-	s.router.DELETE("/accounts/:id", s.deleteAccount)
+	s.Router.POST("/accounts", s.createAccount)
+	s.Router.GET("/accounts/:id", s.getAccount)
+	s.Router.GET("/accounts", s.listAccounts)
+	s.Router.PUT("/accounts", s.updateAccount)
+	s.Router.DELETE("/accounts/:id", s.deleteAccount)
 
 	// User routes
-	s.router.POST("/users", s.createUser)
-	s.router.GET("/users/:id", s.getUserByID)
-	s.router.GET("/users", s.getUserByEmail)
-	s.router.GET("/users/list", s.listUsers)
-	s.router.PUT("/users", s.updateUser)
-	s.router.DELETE("/users/:id", s.deleteUser)
+	s.Router.POST("/users", s.createUser)
+	s.Router.GET("/users/:id", s.getUserByID)
+	s.Router.GET("/users", s.getUserByEmail)
+	s.Router.GET("/users/list", s.listUsers)
+	s.Router.PUT("/users", s.updateUser)
+	s.Router.DELETE("/users/:id", s.deleteUser)
 
 	// Category routes
-	s.router.POST("/categories", s.createCategory)
-	s.router.GET("/categories/:id", s.getCategory)
-	s.router.GET("/categories", s.listCategories)
-	s.router.PUT("/categories", s.updateCategory)
-	s.router.DELETE("/categories/:id", s.deleteCategory)
+	s.Router.POST("/categories", s.createCategory)
+	s.Router.GET("/categories/:id", s.getCategory)
+	s.Router.GET("/categories", s.listCategories)
+	s.Router.PUT("/categories", s.updateCategory)
+	s.Router.DELETE("/categories/:id", s.deleteCategory)
 
 	// Transaction routes
-	s.router.POST("/transactions", s.createTransaction)
-	s.router.GET("/transactions/:id", s.getTransaction)
-	s.router.GET("/transactions", s.listTransactions)
-	s.router.GET("/transactions/account", s.listTransactionsByAccount)
-	s.router.GET("/transactions/date-range", s.listTransactionsByDateRange)
-	s.router.PUT("/transactions", s.updateTransaction)
-	s.router.DELETE("/transactions/:id", s.deleteTransaction)
+	s.Router.POST("/transactions", s.createTransaction)
+	s.Router.GET("/transactions/:id", s.getTransaction)
+	s.Router.GET("/transactions", s.listTransactions)
+	s.Router.GET("/transactions/account", s.listTransactionsByAccount)
+	s.Router.GET("/transactions/date-range", s.listTransactionsByDateRange)
+	s.Router.PUT("/transactions", s.updateTransaction)
+	s.Router.DELETE("/transactions/:id", s.deleteTransaction)
 
 	// Receipt routes
-	s.router.POST("/receipts", s.createReceipt)
-	s.router.GET("/receipts/transaction/:transaction_id", s.getReceiptByTransactionID)
-	s.router.DELETE("/receipts/:id", s.deleteReceipt)
+	s.Router.POST("/receipts", s.createReceipt)
+	s.Router.GET("/receipts/transaction/:transaction_id", s.getReceiptByTransactionID)
+	s.Router.DELETE("/receipts/:id", s.deleteReceipt)
 }
 
 func (s *Server) Start(address string) error {
 	server := &http.Server{
 		Addr:    address,
-		Handler: s.router,
+		Handler: s.Router,
 	}
 
 	quit := make(chan os.Signal, 1)
@@ -133,5 +133,5 @@ func (s *Server) Start(address string) error {
 
 // Getter methods (jika masih dibutuhkan untuk backward compatibility)
 func (s *Server) GetStore() db.Store {
-	return s.store
+	return s.Store
 }
