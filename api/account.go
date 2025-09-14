@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
+	"strings"
 
 	db "github.com/franklindh/catat/db/sqlc"
 	"github.com/franklindh/catat/util"
@@ -90,7 +91,7 @@ func (s *Server) getAccount(ctx *gin.Context) {
 	}
 
 	userID := pgtype.UUID{
-		Bytes: uuid.MustParse("022e7078-bf1c-4af0-b306-2bf92ba8f8eb"),
+		Bytes: uuid.MustParse("b25d7919-6071-422a-85f9-c88afb3f63ad"),
 		Valid: true,
 	}
 
@@ -101,7 +102,7 @@ func (s *Server) getAccount(ctx *gin.Context) {
 
 	account, err := s.Store.GetAccount(ctx, arg)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if strings.Contains(err.Error(), "no rows in result set") {
 			ctx.JSON(http.StatusNotFound, util.ErrorResponseWithMessage("account not found"))
 			return
 		}
@@ -186,7 +187,7 @@ func (s *Server) updateAccount(ctx *gin.Context) {
 	}
 
 	userID := pgtype.UUID{
-		Bytes: uuid.MustParse("022e7078-bf1c-4af0-b306-2bf92ba8f8eb"),
+		Bytes: uuid.MustParse("b25d7919-6071-422a-85f9-c88afb3f63ad"),
 		Valid: true,
 	}
 
@@ -224,7 +225,7 @@ func (s *Server) deleteAccount(ctx *gin.Context) {
 	}
 
 	userID := pgtype.UUID{
-		Bytes: uuid.MustParse("022e7078-bf1c-4af0-b306-2bf92ba8f8eb"),
+		Bytes: uuid.MustParse("b25d7919-6071-422a-85f9-c88afb3f63ad"),
 		Valid: true,
 	}
 

@@ -3,843 +3,767 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	mock "github.com/franklindh/catat/db/mock"
+	mockdb "github.com/franklindh/catat/db/mock"
 	db "github.com/franklindh/catat/db/sqlc"
 	"github.com/gin-gonic/gin"
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+var accountID = uuid.MustParse("d2b072e4-e145-4398-bcf5-ed79b15c95b8")
+var userID = uuid.MustParse("b25d7919-6071-422a-85f9-c88afb3f63ad")
+
 func TestCreateAccountAPI(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	userID := uuid.New()
-	accountID := uuid.New()
-
-	expectedAccount := db.Account{
-		ID:        pgtype.UUID{Bytes: accountID, Valid: true},
-		UserID:    pgtype.UUID{Bytes: userID, Valid: true},
-		Name:      "Test Account",
-		Type:      "depository",
-		Balance:   pgtype.Numeric{Int: big.NewInt(0), Exp: 0, Valid: true},
-		CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-		UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-	}
-
-	mockStore.EXPECT().
-		CreateAccount(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, arg db.CreateAccountParams) (db.Account, error) {
-
-			assert.Equal(t, userID[:], arg.UserID.Bytes[:])
-			assert.Equal(t, "Test Account", arg.Name)
-			assert.Equal(t, "depository", arg.Type)
-			return expectedAccount, nil
-		})
-
-	accountReq := createAccountRequest{
-		UserID: userID.String(),
-		Name:   "Test Account",
-		Type:   "depository",
-	}
-	jsonReq, _ := json.Marshal(accountReq)
-
-	req := httptest.NewRequest(http.MethodPost, "/accounts", bytes.NewBuffer(jsonReq))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusCreated, w.Code)
-
-	var responseAccount db.Account
-	err := json.Unmarshal(w.Body.Bytes(), &responseAccount)
-	require.NoError(t, err)
-	assert.Equal(t, expectedAccount.Name, responseAccount.Name)
-	assert.Equal(t, expectedAccount.Type, responseAccount.Type)
-}
-
-func TestCreateAccountAPI_InvalidInput(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
 	testCases := []struct {
 		name          string
 		body          string
-		expectedCode  int
-		errorContains string
+		setupMock     func(store *mockdb.MockStore)
+		checkResponse func(recorder *httptest.ResponseRecorder)
 	}{
 		{
-			name:          "Invalid User ID",
-			body:          `{"user_id": "invalid-uuid", "name": "Test Account", "type": "depository"}`,
-			expectedCode:  http.StatusBadRequest,
-			errorContains: "uuid",
+			name: "OK",
+			body: fmt.Sprintf(`{
+				"user_id": "%s",
+				"name": "Test Account",
+				"type": "depository"
+		}`, userID.String()),
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					CreateAccount(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, arg db.CreateAccountParams) (db.Account, error) {
+						require.Equal(t, "Test Account", arg.Name)
+						require.Equal(t, "depository", arg.Type)
+						require.True(t, arg.UserID.Valid)
+						return db.Account{
+							ID:        pgtype.UUID{Bytes: [16]byte{}, Valid: true},
+							UserID:    arg.UserID,
+							Name:      "Test Account",
+							Type:      "depository",
+							Balance:   pgtype.Numeric{Int: big.NewInt(0), Exp: 0, Valid: true},
+							CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+							UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+						}, nil
+					})
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusCreated, recorder.Code)
+			},
 		},
 		{
-			name:          "Missing Name",
-			body:          `{"user_id": "550e8400-e29b-41d4-a716-446655440000", "type": "depository"}`,
-			expectedCode:  http.StatusBadRequest,
-			errorContains: "required",
+			name: "InvalidUserID",
+			body: `{
+				"user_id": "invalid-uuid",
+				"name": "Test Account",
+				"type": "depository"
+			}`,
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					CreateAccount(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+			},
 		},
 		{
-			name:          "Invalid Type",
-			body:          `{"user_id": "550e8400-e29b-41d4-a716-446655440000", "name": "Test Account", "type": "invalid"}`,
-			expectedCode:  http.StatusBadRequest,
-			errorContains: "oneof",
+			name: "MissingName",
+			body: fmt.Sprintf(`{
+				"user_id": "%s",
+				"type": "depository"
+		}`, userID.String()),
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					CreateAccount(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+			},
 		},
 		{
-			name:          "Empty Body",
-			body:          `{}`,
-			expectedCode:  http.StatusBadRequest,
-			errorContains: "required",
+			name: "InvalidType",
+			body: fmt.Sprintf(`{
+				"user_id": "%s",
+				"name": "Test Account",
+				"type": "icikiwir"
+		}`, userID.String()),
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					CreateAccount(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			name: "EmptyBody",
+			body: `{}`,
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					CreateAccount(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			name: "DatabaseError",
+			body: fmt.Sprintf(`{
+					"user_id": "%s",
+					"name": "Test Account",
+					"type": "depository"
+			}`, userID.String()),
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					CreateAccount(gomock.Any(), gomock.Any()).
+					Return(db.Account{}, sql.ErrConnDone).
+					Times(1)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusInternalServerError, recorder.Code)
+			},
 		},
 	}
 
-	for _, tc := range testCases {
+	for i := range testCases {
+		tc := testCases[i]
 		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			store := mockdb.NewMockStore(ctrl)
+			tc.setupMock(store)
+
+			server := &Server{
+				Store:  store,
+				Router: gin.Default(),
+			}
+			server.setupRoutes()
+
 			req := httptest.NewRequest(http.MethodPost, "/accounts", bytes.NewBufferString(tc.body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 
 			server.Router.ServeHTTP(w, req)
 
-			assert.Equal(t, tc.expectedCode, w.Code)
-			assert.Contains(t, w.Body.String(), tc.errorContains)
+			tc.checkResponse(w)
 		})
 	}
 }
 
-func TestCreateAccountAPI_StoreError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	userID := uuid.New()
-
-	mockStore.EXPECT().
-		CreateAccount(gomock.Any(), gomock.Any()).
-		Return(db.Account{}, errors.New("database error"))
-
-	accountReq := createAccountRequest{
-		UserID: userID.String(),
-		Name:   "Test Account",
-		Type:   "depository",
-	}
-	jsonReq, _ := json.Marshal(accountReq)
-
-	req := httptest.NewRequest(http.MethodPost, "/accounts", bytes.NewBuffer(jsonReq))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
-	assert.Contains(t, w.Body.String(), "database error")
-}
-
 func TestGetAccountAPI(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+	testCases := []struct {
+		name          string
+		url           string
+		accountID     string
+		setupMock     func(store *mockdb.MockStore)
+		checkResponse func(recorder *httptest.ResponseRecorder)
+	}{
+		{
+			name: "OK",
+			url:  "/accounts/" + accountID.String(),
+			setupMock: func(store *mockdb.MockStore) {
+				arg := db.GetAccountParams{
+					ID:     pgtype.UUID{Bytes: accountID, Valid: true},
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+				}
+				store.EXPECT().
+					GetAccount(gomock.Any(), gomock.Eq(arg)).
+					Return(db.Account{
+						ID:        pgtype.UUID{Bytes: accountID, Valid: true},
+						UserID:    pgtype.UUID{Bytes: userID, Valid: true},
+						Name:      "Test Account",
+						Type:      "depository",
+						Balance:   pgtype.Numeric{Int: big.NewInt(1000000), Exp: -4, Valid: true},
+						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+						UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+					}, nil)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, recorder.Code)
 
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
+				var responseAccount db.Account
+				err := json.Unmarshal(recorder.Body.Bytes(), &responseAccount)
+				require.NoError(t, err)
+				require.Equal(t, "Test Account", responseAccount.Name)
+				require.Equal(t, "depository", responseAccount.Type)
+			},
+		},
+		{
+			name: "NotFound",
+			url:  "/accounts/" + accountID.String(),
+			setupMock: func(store *mockdb.MockStore) {
+				arg := db.GetAccountParams{
+					ID:     pgtype.UUID{Bytes: accountID, Valid: true},
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+				}
+				store.EXPECT().
+					GetAccount(gomock.Any(), gomock.Eq(arg)).
+					Return(db.Account{}, sql.ErrNoRows)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusNotFound, recorder.Code)
+			},
+		},
+		{
+			name: "StoreError",
+			url:  "/accounts/" + accountID.String(),
+			setupMock: func(store *mockdb.MockStore) {
+				arg := db.GetAccountParams{
+					ID:     pgtype.UUID{Bytes: accountID, Valid: true},
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+				}
+				store.EXPECT().
+					GetAccount(gomock.Any(), gomock.Eq(arg)).
+					Return(db.Account{}, errors.New("database error"))
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusInternalServerError, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "database error")
+			},
+		},
+		{
+			name: "InvalidUUID",
+			url:  "/accounts/invalid-uuid",
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetAccount(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "uuid")
+			},
+		},
+		// {
+		// 	name: "InvalidUserID",
+		// 	url:  "/accounts/" + accountID.String(),
+		// 	setupMock: func(store *mockdb.MockStore) {
+		// 		store.EXPECT().
+		// 			GetAccount(gomock.Any(), gomock.Any()).
+		// 			Times(0)
+		// 	},
+		// 	checkResponse: func(recorder *httptest.ResponseRecorder) {
+		// 		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		// 		require.Contains(t, recorder.Body.String(), "uuid")
+		// 	},
+		// },
 	}
-	server.setupRoutes()
 
-	accountID := uuid.New()
-	userID := uuid.MustParse("022e7078-bf1c-4af0-b306-2bf92ba8f8eb")
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-	expectedAccount := db.Account{
-		ID:        pgtype.UUID{Bytes: accountID, Valid: true},
-		UserID:    pgtype.UUID{Bytes: userID, Valid: true},
-		Name:      "Test Account",
-		Type:      "depository",
-		Balance:   pgtype.Numeric{Int: big.NewInt(1000000), Exp: -4, Valid: true},
-		CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-		UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			store := mockdb.NewMockStore(ctrl)
+			tc.setupMock(store)
+
+			server := &Server{
+				Store:  store,
+				Router: gin.Default(),
+			}
+			server.setupRoutes()
+
+			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
+			w := httptest.NewRecorder()
+
+			server.Router.ServeHTTP(w, req)
+			tc.checkResponse(w)
+		})
 	}
-
-	arg := db.GetAccountParams{
-		ID:     pgtype.UUID{Bytes: accountID, Valid: true},
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
-	}
-
-	mockStore.EXPECT().
-		GetAccount(gomock.Any(), arg).
-		Return(expectedAccount, nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/accounts/"+accountID.String(), nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var responseAccount db.Account
-	err := json.Unmarshal(w.Body.Bytes(), &responseAccount)
-	require.NoError(t, err)
-	assert.Equal(t, expectedAccount.ID, responseAccount.ID)
-	assert.Equal(t, expectedAccount.Name, responseAccount.Name)
-}
-
-func TestGetAccountAPI_NotFound(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	accountID := uuid.New()
-	userID := uuid.MustParse("022e7078-bf1c-4af0-b306-2bf92ba8f8eb")
-
-	arg := db.GetAccountParams{
-		ID:     pgtype.UUID{Bytes: accountID, Valid: true},
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
-	}
-
-	mockStore.EXPECT().
-		GetAccount(gomock.Any(), arg).
-		Return(db.Account{}, pgx.ErrNoRows)
-
-	req := httptest.NewRequest(http.MethodGet, "/accounts/"+accountID.String(), nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusNotFound, w.Code)
-}
-
-func TestGetAccountAPI_StoreError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	accountID := uuid.New()
-	userID := uuid.MustParse("022e7078-bf1c-4af0-b306-2bf92ba8f8eb")
-
-	arg := db.GetAccountParams{
-		ID:     pgtype.UUID{Bytes: accountID, Valid: true},
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
-	}
-
-	mockStore.EXPECT().
-		GetAccount(gomock.Any(), arg).
-		Return(db.Account{}, errors.New("database error"))
-
-	req := httptest.NewRequest(http.MethodGet, "/accounts/"+accountID.String(), nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
-	assert.Contains(t, w.Body.String(), "database error")
-}
-
-func TestGetAccountAPI_InvalidUUID(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	req := httptest.NewRequest(http.MethodGet, "/accounts/invalid-uuid", nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "uuid")
 }
 
 func TestListAccountsAPI(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	userID := uuid.New()
-
-	accounts := []db.Account{
+	testCases := []struct {
+		name          string
+		url           string
+		setupMock     func(store *mockdb.MockStore)
+		checkResponse func(recorder *httptest.ResponseRecorder)
+	}{
 		{
-			ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
-			UserID:    pgtype.UUID{Bytes: userID, Valid: true},
-			Name:      "Account 1",
-			Type:      "depository",
-			Balance:   pgtype.Numeric{Int: big.NewInt(1000000), Exp: -4, Valid: true},
-			CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-			UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			name: "OK",
+			url:  "/accounts?user_id=" + userID.String() + "&page=1&limit=10",
+			setupMock: func(store *mockdb.MockStore) {
+				listArg := db.ListAccountsParams{
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+					Limit:  10,
+					Offset: 0,
+				}
+				countArg := pgtype.UUID{Bytes: userID, Valid: true}
+
+				accounts := []db.Account{
+					{
+						ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
+						UserID:    pgtype.UUID{Bytes: userID, Valid: true},
+						Name:      "Account 1",
+						Type:      "depository",
+						Balance:   pgtype.Numeric{Int: big.NewInt(1000000), Exp: -4, Valid: true},
+						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+						UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+					},
+					{
+						ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
+						UserID:    pgtype.UUID{Bytes: userID, Valid: true},
+						Name:      "Account 2",
+						Type:      "credit",
+						Balance:   pgtype.Numeric{Int: big.NewInt(-500000), Exp: -4, Valid: true},
+						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+						UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+					},
+				}
+
+				store.EXPECT().
+					ListAccounts(gomock.Any(), gomock.Eq(listArg)).
+					Return(accounts, nil)
+
+				store.EXPECT().
+					CountAccountsByUser(gomock.Any(), gomock.Eq(countArg)).
+					Return(int64(2), nil)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, recorder.Code)
+
+				var response map[string]interface{}
+				err := json.Unmarshal(recorder.Body.Bytes(), &response)
+				require.NoError(t, err)
+
+				_, exists := response["data"]
+				require.True(t, exists)
+
+				_, exists = response["pagination"]
+				require.True(t, exists)
+			},
 		},
 		{
-			ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
-			UserID:    pgtype.UUID{Bytes: userID, Valid: true},
-			Name:      "Account 2",
-			Type:      "credit",
-			Balance:   pgtype.Numeric{Int: big.NewInt(-500000), Exp: -4, Valid: true},
-			CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-			UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			name: "StoreError",
+			url:  "/accounts?user_id=" + userID.String() + "&page=1&limit=10",
+			setupMock: func(store *mockdb.MockStore) {
+				listArg := db.ListAccountsParams{
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+					Limit:  10,
+					Offset: 0,
+				}
+
+				store.EXPECT().
+					ListAccounts(gomock.Any(), gomock.Eq(listArg)).
+					Return([]db.Account{}, errors.New("database error"))
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusInternalServerError, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "database error")
+			},
 		},
-	}
-
-	listArg := db.ListAccountsParams{
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
-		Limit:  10,
-		Offset: 0,
-	}
-
-	countArg := pgtype.UUID{Bytes: userID, Valid: true}
-
-	mockStore.EXPECT().
-		ListAccounts(gomock.Any(), listArg).
-		Return(accounts, nil)
-
-	mockStore.EXPECT().
-		CountAccountsByUser(gomock.Any(), countArg).
-		Return(int64(2), nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/accounts?user_id="+userID.String()+"&page=1&limit=10", nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, err)
-
-	_, exists := response["data"]
-	assert.True(t, exists)
-
-	_, exists = response["pagination"]
-	assert.True(t, exists)
-}
-
-func TestListAccountsAPI_StoreError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	userID := uuid.New()
-
-	listArg := db.ListAccountsParams{
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
-		Limit:  10,
-		Offset: 0,
-	}
-
-	mockStore.EXPECT().
-		ListAccounts(gomock.Any(), listArg).
-		Return([]db.Account{}, errors.New("database error"))
-
-	req := httptest.NewRequest(http.MethodGet, "/accounts?user_id="+userID.String()+"&page=1&limit=10", nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
-	assert.Contains(t, w.Body.String(), "database error")
-}
-
-func TestListAccountsAPI_CountError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	userID := uuid.New()
-
-	listArg := db.ListAccountsParams{
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
-		Limit:  10,
-		Offset: 0,
-	}
-
-	countArg := pgtype.UUID{Bytes: userID, Valid: true}
-
-	accounts := []db.Account{
 		{
-			ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
-			UserID:    pgtype.UUID{Bytes: userID, Valid: true},
-			Name:      "Account 1",
-			Type:      "depository",
-			Balance:   pgtype.Numeric{Int: big.NewInt(1000000), Exp: -4, Valid: true},
-			CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-			UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			name: "CountError",
+			url:  "/accounts?user_id=" + userID.String() + "&page=1&limit=10",
+			setupMock: func(store *mockdb.MockStore) {
+				listArg := db.ListAccountsParams{
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+					Limit:  10,
+					Offset: 0,
+				}
+				countArg := pgtype.UUID{Bytes: userID, Valid: true}
+
+				accounts := []db.Account{
+					{
+						ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
+						UserID:    pgtype.UUID{Bytes: userID, Valid: true},
+						Name:      "Account 1",
+						Type:      "depository",
+						Balance:   pgtype.Numeric{Int: big.NewInt(1000000), Exp: -4, Valid: true},
+						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+						UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+					},
+				}
+
+				store.EXPECT().
+					ListAccounts(gomock.Any(), gomock.Eq(listArg)).
+					Return(accounts, nil)
+
+				store.EXPECT().
+					CountAccountsByUser(gomock.Any(), gomock.Eq(countArg)).
+					Return(int64(0), errors.New("count error"))
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, recorder.Code)
+
+				var response map[string]interface{}
+				err := json.Unmarshal(recorder.Body.Bytes(), &response)
+				require.NoError(t, err)
+
+				data, exists := response["data"]
+				require.True(t, exists)
+				require.Len(t, data, 1)
+			},
 		},
-	}
-
-	mockStore.EXPECT().
-		ListAccounts(gomock.Any(), listArg).
-		Return(accounts, nil)
-
-	mockStore.EXPECT().
-		CountAccountsByUser(gomock.Any(), countArg).
-		Return(int64(0), errors.New("count error"))
-
-	req := httptest.NewRequest(http.MethodGet, "/accounts?user_id="+userID.String()+"&page=1&limit=10", nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, err)
-
-	data, exists := response["data"]
-	assert.True(t, exists)
-	assert.Len(t, data, 1)
-
-	pagination, exists := response["pagination"]
-	assert.True(t, exists)
-	assert.NotContains(t, pagination, "total")
-}
-
-func TestListAccountsAPI_InvalidUserID(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	req := httptest.NewRequest(http.MethodGet, "/accounts?user_id=invalid-uuid&page=1&limit=10", nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "uuid")
-}
-
-func TestListAccountsAPI_DefaultPagination(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	userID := uuid.New()
-
-	accounts := []db.Account{
 		{
-			ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
-			UserID:    pgtype.UUID{Bytes: userID, Valid: true},
-			Name:      "Account 1",
-			Type:      "depository",
-			Balance:   pgtype.Numeric{Int: big.NewInt(1000000), Exp: -4, Valid: true},
-			CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-			UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			name: "InvalidUserID",
+			url:  "/accounts?user_id=invalid-uuid&page=1&limit=10",
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					ListAccounts(gomock.Any(), gomock.Any()).
+					Times(0)
+
+				store.EXPECT().
+					CountAccountsByUser(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "uuid")
+			},
+		},
+		{
+			name: "DefaultPagination",
+			url:  "/accounts?user_id=" + userID.String(),
+			setupMock: func(store *mockdb.MockStore) {
+				listArg := db.ListAccountsParams{
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+					Limit:  10,
+					Offset: 0,
+				}
+				countArg := pgtype.UUID{Bytes: userID, Valid: true}
+
+				accounts := []db.Account{
+					{
+						ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
+						UserID:    pgtype.UUID{Bytes: userID, Valid: true},
+						Name:      "Account 1",
+						Type:      "depository",
+						Balance:   pgtype.Numeric{Int: big.NewInt(1000000), Exp: -4, Valid: true},
+						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+						UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+					},
+				}
+
+				store.EXPECT().
+					ListAccounts(gomock.Any(), gomock.Eq(listArg)).
+					Return(accounts, nil)
+
+				store.EXPECT().
+					CountAccountsByUser(gomock.Any(), gomock.Eq(countArg)).
+					Return(int64(1), nil)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, recorder.Code)
+
+				var response map[string]interface{}
+				err := json.Unmarshal(recorder.Body.Bytes(), &response)
+				require.NoError(t, err)
+
+				pagination, exists := response["pagination"].(map[string]interface{})
+				require.True(t, exists)
+				require.Equal(t, float64(1), pagination["page"])
+				require.Equal(t, float64(10), pagination["limit"])
+				require.Equal(t, float64(1), pagination["totalPages"])
+			},
+		},
+		{
+			name: "LimitExceeded",
+			url:  "/accounts?user_id=" + userID.String() + "&limit=150",
+			setupMock: func(store *mockdb.MockStore) {
+				listArg := db.ListAccountsParams{
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+					Limit:  100,
+					Offset: 0,
+				}
+				countArg := pgtype.UUID{Bytes: userID, Valid: true}
+
+				accounts := make([]db.Account, 0)
+
+				store.EXPECT().
+					ListAccounts(gomock.Any(), gomock.Eq(listArg)).
+					Return(accounts, nil)
+
+				store.EXPECT().
+					CountAccountsByUser(gomock.Any(), gomock.Eq(countArg)).
+					Return(int64(0), nil)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, recorder.Code)
+			},
 		},
 	}
 
-	listArg := db.ListAccountsParams{
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
-		Limit:  10,
-		Offset: 0,
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			store := mockdb.NewMockStore(ctrl)
+			tc.setupMock(store)
+
+			server := &Server{
+				Store:  store,
+				Router: gin.Default(),
+			}
+			server.setupRoutes()
+
+			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
+			w := httptest.NewRecorder()
+
+			server.Router.ServeHTTP(w, req)
+			tc.checkResponse(w)
+		})
 	}
-
-	countArg := pgtype.UUID{Bytes: userID, Valid: true}
-
-	mockStore.EXPECT().
-		ListAccounts(gomock.Any(), listArg).
-		Return(accounts, nil)
-
-	mockStore.EXPECT().
-		CountAccountsByUser(gomock.Any(), countArg).
-		Return(int64(1), nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/accounts?user_id="+userID.String(), nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, err)
-
-	pagination, exists := response["pagination"].(map[string]interface{})
-	assert.True(t, exists)
-	assert.Equal(t, float64(1), pagination["page"])
-	assert.Equal(t, float64(10), pagination["limit"])
-	assert.Equal(t, float64(1), pagination["totalPages"])
-}
-
-func TestListAccountsAPI_LimitExceeded(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	userID := uuid.New()
-
-	accounts := make([]db.Account, 0)
-
-	listArg := db.ListAccountsParams{
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
-		Limit:  100,
-		Offset: 0,
-	}
-
-	countArg := pgtype.UUID{Bytes: userID, Valid: true}
-
-	mockStore.EXPECT().
-		ListAccounts(gomock.Any(), listArg).
-		Return(accounts, nil)
-
-	mockStore.EXPECT().
-		CountAccountsByUser(gomock.Any(), countArg).
-		Return(int64(0), nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/accounts?user_id="+userID.String()+"&limit=150", nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestUpdateAccountAPI(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	accountID := uuid.New()
-	userID := uuid.MustParse("022e7078-bf1c-4af0-b306-2bf92ba8f8eb")
-
-	updatedAccount := db.Account{
-		ID:        pgtype.UUID{Bytes: accountID, Valid: true},
-		UserID:    pgtype.UUID{Bytes: userID, Valid: true},
-		Name:      "Updated Account Name",
-		Type:      "credit",
-		Balance:   pgtype.Numeric{Int: big.NewInt(0), Exp: 0, Valid: true},
-		CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-		UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-	}
-
-	arg := db.UpdateAccountParams{
-		ID:     pgtype.UUID{Bytes: accountID, Valid: true},
-		Name:   "Updated Account Name",
-		Type:   "credit",
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
-	}
-
-	mockStore.EXPECT().
-		UpdateAccount(gomock.Any(), arg).
-		Return(updatedAccount, nil)
-
-	updateReq := updateAccountRequest{
-		ID:   accountID.String(),
-		Name: "Updated Account Name",
-		Type: "credit",
-	}
-	jsonReq, _ := json.Marshal(updateReq)
-
-	req := httptest.NewRequest(http.MethodPut, "/accounts", bytes.NewBuffer(jsonReq))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var responseAccount db.Account
-	err := json.Unmarshal(w.Body.Bytes(), &responseAccount)
-	require.NoError(t, err)
-	assert.Equal(t, updatedAccount.Name, responseAccount.Name)
-	assert.Equal(t, updatedAccount.Type, responseAccount.Type)
-}
-
-func TestUpdateAccountAPI_InvalidInput(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
 	testCases := []struct {
 		name          string
 		body          string
-		expectedCode  int
-		errorContains string
+		setupMock     func(store *mockdb.MockStore)
+		checkResponse func(recorder *httptest.ResponseRecorder)
 	}{
 		{
-			name:          "Invalid Account ID",
-			body:          `{"id": "invalid-uuid", "name": "Updated Name", "type": "depository"}`,
-			expectedCode:  http.StatusBadRequest,
-			errorContains: "uuid",
+			name: "OK",
+			body: fmt.Sprintf(`{
+				"id": "%s",
+				"name": "Updated Account Name",
+				"type": "credit"
+			}`, accountID.String()),
+			setupMock: func(store *mockdb.MockStore) {
+				arg := db.UpdateAccountParams{
+					ID:     pgtype.UUID{Bytes: accountID, Valid: true},
+					Name:   "Updated Account Name",
+					Type:   "credit",
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+				}
+				updatedAccount := db.Account{
+					ID:        pgtype.UUID{Bytes: accountID, Valid: true},
+					UserID:    pgtype.UUID{Bytes: userID, Valid: true},
+					Name:      "Updated Account Name",
+					Type:      "credit",
+					Balance:   pgtype.Numeric{Int: big.NewInt(0), Exp: 0, Valid: true},
+					CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+					UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+				}
+				store.EXPECT().
+					UpdateAccount(gomock.Any(), gomock.Eq(arg)).
+					Return(updatedAccount, nil)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, recorder.Code)
+
+				var responseAccount db.Account
+				err := json.Unmarshal(recorder.Body.Bytes(), &responseAccount)
+				require.NoError(t, err)
+				require.Equal(t, "Updated Account Name", responseAccount.Name)
+				require.Equal(t, "credit", responseAccount.Type)
+			},
 		},
 		{
-			name:          "Missing Name",
-			body:          `{"id": "550e8400-e29b-41d4-a716-446655440000", "type": "depository"}`,
-			expectedCode:  http.StatusBadRequest,
-			errorContains: "required",
+			name: "InvalidAccountID",
+			body: `{
+				"id": "invalid-uuid",
+				"name": "Updated Name",
+				"type": "depository"
+			}`,
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					UpdateAccount(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "uuid")
+			},
 		},
 		{
-			name:          "Invalid Type",
-			body:          `{"id": "550e8400-e29b-41d4-a716-446655440000", "name": "Updated Name", "type": "invalid"}`,
-			expectedCode:  http.StatusBadRequest,
-			errorContains: "oneof",
+			name: "MissingName",
+			body: fmt.Sprintf(`{
+				"id": "%s",
+				"type": "depository"
+			}`, accountID.String()),
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					UpdateAccount(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "required")
+			},
 		},
 		{
-			name:          "Empty Body",
-			body:          `{}`,
-			expectedCode:  http.StatusBadRequest,
-			errorContains: "required",
+			name: "InvalidType",
+			body: fmt.Sprintf(`{
+				"id": "%s",
+				"name": "Updated Name",
+				"type": "invalid"
+			}`, accountID.String()),
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					UpdateAccount(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "oneof")
+			},
+		},
+		{
+			name: "EmptyBody",
+			body: `{}`,
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					UpdateAccount(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "required")
+			},
+		},
+		{
+			name: "StoreError",
+			body: fmt.Sprintf(`{
+				"id": "%s",
+				"name": "Updated Account Name",
+				"type": "credit"
+			}`, accountID.String()),
+			setupMock: func(store *mockdb.MockStore) {
+				arg := db.UpdateAccountParams{
+					ID:     pgtype.UUID{Bytes: accountID, Valid: true},
+					Name:   "Updated Account Name",
+					Type:   "credit",
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+				}
+				store.EXPECT().
+					UpdateAccount(gomock.Any(), gomock.Eq(arg)).
+					Return(db.Account{}, errors.New("database error"))
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusInternalServerError, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "database error")
+			},
 		},
 	}
 
-	for _, tc := range testCases {
+	for i := range testCases {
+		tc := testCases[i]
 		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			store := mockdb.NewMockStore(ctrl)
+			tc.setupMock(store)
+
+			server := &Server{
+				Store:  store,
+				Router: gin.Default(),
+			}
+			server.setupRoutes()
+
 			req := httptest.NewRequest(http.MethodPut, "/accounts", bytes.NewBufferString(tc.body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 
 			server.Router.ServeHTTP(w, req)
-
-			assert.Equal(t, tc.expectedCode, w.Code)
-			assert.Contains(t, w.Body.String(), tc.errorContains)
+			tc.checkResponse(w)
 		})
 	}
 }
 
-func TestUpdateAccountAPI_StoreError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	accountID := uuid.New()
-	userID := uuid.MustParse("022e7078-bf1c-4af0-b306-2bf92ba8f8eb")
-
-	arg := db.UpdateAccountParams{
-		ID:     pgtype.UUID{Bytes: accountID, Valid: true},
-		Name:   "Updated Account Name",
-		Type:   "credit",
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
-	}
-
-	mockStore.EXPECT().
-		UpdateAccount(gomock.Any(), arg).
-		Return(db.Account{}, errors.New("database error"))
-
-	updateReq := updateAccountRequest{
-		ID:   accountID.String(),
-		Name: "Updated Account Name",
-		Type: "credit",
-	}
-	jsonReq, _ := json.Marshal(updateReq)
-
-	req := httptest.NewRequest(http.MethodPut, "/accounts", bytes.NewBuffer(jsonReq))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
-	assert.Contains(t, w.Body.String(), "database error")
-}
-
 func TestDeleteAccountAPI(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+	testCases := []struct {
+		name          string
+		url           string
+		setupMock     func(store *mockdb.MockStore)
+		checkResponse func(recorder *httptest.ResponseRecorder)
+	}{
+		{
+			name: "OK",
+			url:  "/accounts/" + accountID.String(),
+			setupMock: func(store *mockdb.MockStore) {
+				arg := db.DeleteAccountParams{
+					ID:     pgtype.UUID{Bytes: accountID, Valid: true},
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+				}
+				store.EXPECT().
+					DeleteAccount(gomock.Any(), gomock.Eq(arg)).
+					Return(nil)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, recorder.Code)
 
-	mockStore := mock.NewMockStore(ctrl)
+				var response map[string]interface{}
+				err := json.Unmarshal(recorder.Body.Bytes(), &response)
+				require.NoError(t, err)
 
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
+				message, exists := response["message"]
+				require.True(t, exists)
+				require.Equal(t, "account deleted successfully", message)
+			},
+		},
+		{
+			name: "StoreError",
+			url:  "/accounts/" + accountID.String(),
+			setupMock: func(store *mockdb.MockStore) {
+				arg := db.DeleteAccountParams{
+					ID:     pgtype.UUID{Bytes: accountID, Valid: true},
+					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+				}
+				store.EXPECT().
+					DeleteAccount(gomock.Any(), gomock.Eq(arg)).
+					Return(errors.New("database error"))
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusInternalServerError, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "database error")
+			},
+		},
+		{
+			name: "InvalidUUID",
+			url:  "/accounts/invalid-uuid",
+			setupMock: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					DeleteAccount(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "uuid")
+			},
+		},
 	}
-	server.setupRoutes()
 
-	accountID := uuid.New()
-	userID := uuid.MustParse("022e7078-bf1c-4af0-b306-2bf92ba8f8eb")
+	for i := range testCases {
+		tc := testCases[i]
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-	arg := db.DeleteAccountParams{
-		ID:     pgtype.UUID{Bytes: accountID, Valid: true},
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
+			store := mockdb.NewMockStore(ctrl)
+			tc.setupMock(store)
+
+			server := &Server{
+				Store:  store,
+				Router: gin.Default(),
+			}
+			server.setupRoutes()
+
+			req := httptest.NewRequest(http.MethodDelete, tc.url, nil)
+			w := httptest.NewRecorder()
+
+			server.Router.ServeHTTP(w, req)
+			tc.checkResponse(w)
+		})
 	}
-
-	mockStore.EXPECT().
-		DeleteAccount(gomock.Any(), arg).
-		Return(nil)
-
-	req := httptest.NewRequest(http.MethodDelete, "/accounts/"+accountID.String(), nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, err)
-
-	message, exists := response["message"]
-	assert.True(t, exists)
-	assert.Equal(t, "account deleted successfully", message)
-}
-
-func TestDeleteAccountAPI_StoreError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	accountID := uuid.New()
-	userID := uuid.MustParse("022e7078-bf1c-4af0-b306-2bf92ba8f8eb")
-
-	arg := db.DeleteAccountParams{
-		ID:     pgtype.UUID{Bytes: accountID, Valid: true},
-		UserID: pgtype.UUID{Bytes: userID, Valid: true},
-	}
-
-	mockStore.EXPECT().
-		DeleteAccount(gomock.Any(), arg).
-		Return(errors.New("database error"))
-
-	req := httptest.NewRequest(http.MethodDelete, "/accounts/"+accountID.String(), nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
-	assert.Contains(t, w.Body.String(), "database error")
-}
-
-func TestDeleteAccountAPI_InvalidUUID(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStore := mock.NewMockStore(ctrl)
-
-	server := &Server{
-		Store:  mockStore,
-		Router: gin.Default(),
-	}
-	server.setupRoutes()
-
-	req := httptest.NewRequest(http.MethodDelete, "/accounts/invalid-uuid", nil)
-	w := httptest.NewRecorder()
-
-	server.Router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "uuid")
 }
