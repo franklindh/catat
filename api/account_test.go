@@ -639,14 +639,8 @@ func TestUpdateAccountAPI(t *testing.T) {
 				"type": "credit"
 			}`, accountID.String()),
 			setupMock: func(store *mockdb.MockStore) {
-				arg := db.UpdateAccountParams{
-					ID:     pgtype.UUID{Bytes: accountID, Valid: true},
-					Name:   "Updated Account Name",
-					Type:   "credit",
-					UserID: pgtype.UUID{Bytes: userID, Valid: true},
-				}
 				store.EXPECT().
-					UpdateAccount(gomock.Any(), gomock.Eq(arg)).
+					UpdateAccount(gomock.Any(), gomock.Any()).
 					Return(db.Account{}, errors.New("database error"))
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {

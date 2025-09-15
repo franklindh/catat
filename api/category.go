@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	db "github.com/franklindh/catat/db/sqlc"
 	"github.com/franklindh/catat/util"
@@ -89,6 +90,10 @@ func (s *Server) getCategory(ctx *gin.Context) {
 
 	category, err := s.Store.GetCategory(ctx, arg)
 	if err != nil {
+		if strings.Contains(err.Error(), "no rows in result set") {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponseWithMessage("account not found"))
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
