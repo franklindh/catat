@@ -23,7 +23,6 @@ import (
 )
 
 var accountID = uuid.MustParse("d2b072e4-e145-4398-bcf5-ed79b15c95b8")
-var userID = uuid.MustParse("b25d7919-6071-422a-85f9-c88afb3f63ad")
 
 func TestCreateAccountAPI(t *testing.T) {
 	testCases := []struct {

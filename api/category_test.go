@@ -576,9 +576,6 @@ func TestUpdateCategoryAPI(t *testing.T) {
 }
 
 func TestDeleteCategoryAPI(t *testing.T) {
-	categoryID := uuid.New()
-	userID := uuid.New()
-
 	testCases := []struct {
 		name          string
 		url           string
