@@ -602,7 +602,7 @@ func TestDeleteUserAPI(t *testing.T) {
 			name:   "OK",
 			userID: userID.String(),
 			setupMock: func(store *mockdb.MockStore) {
-				// Gunakan pgtype.UUID seperti yang dikirim oleh aplikasi
+
 				userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 				store.EXPECT().
 					DeleteUser(gomock.Any(), gomock.Eq(userUUID)).
@@ -636,7 +636,7 @@ func TestDeleteUserAPI(t *testing.T) {
 			name:   "StoreError",
 			userID: userID.String(),
 			setupMock: func(store *mockdb.MockStore) {
-				// Gunakan pgtype.UUID seperti yang dikirim oleh aplikasi
+
 				userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 				store.EXPECT().
 					DeleteUser(gomock.Any(), gomock.Eq(userUUID)).

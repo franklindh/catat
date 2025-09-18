@@ -3,6 +3,7 @@ package api
 import (
 	"math/big"
 	"net/http"
+	"strings"
 	"time"
 
 	db "github.com/franklindh/catat/db/sqlc"
@@ -139,6 +140,10 @@ func (s *Server) getTransaction(ctx *gin.Context) {
 
 	transaction, err := s.Store.GetTransaction(ctx, arg)
 	if err != nil {
+		if strings.Contains(err.Error(), "no rows in result set") {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponseWithMessage("account not found"))
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}

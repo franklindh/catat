@@ -34,7 +34,6 @@ func NewServer(dbPool *pgxpool.Pool) *Server {
 	Router.Use(gin.Logger())
 	Router.Use(gin.Recovery())
 
-	// Create Store from db pool
 	Store := db.NewStore(dbPool)
 
 	server := &Server{
@@ -61,14 +60,12 @@ func (s *Server) setupRoutes() {
 		})
 	})
 
-	// Account routes
 	s.Router.POST("/accounts", s.createAccount)
 	s.Router.GET("/accounts/:id", s.getAccount)
 	s.Router.GET("/accounts", s.listAccounts)
 	s.Router.PUT("/accounts", s.updateAccount)
 	s.Router.DELETE("/accounts/:id", s.deleteAccount)
 
-	// User routes
 	s.Router.POST("/users", s.createUser)
 	s.Router.GET("/users/:id", s.getUserByID)
 	s.Router.GET("/users", s.getUserByEmail)
@@ -76,14 +73,12 @@ func (s *Server) setupRoutes() {
 	s.Router.PUT("/users", s.updateUser)
 	s.Router.DELETE("/users/:id", s.deleteUser)
 
-	// Category routes
 	s.Router.POST("/categories", s.createCategory)
 	s.Router.GET("/categories/:id", s.getCategory)
 	s.Router.GET("/categories", s.listCategories)
 	s.Router.PUT("/categories", s.updateCategory)
 	s.Router.DELETE("/categories/:id", s.deleteCategory)
 
-	// Transaction routes
 	s.Router.POST("/transactions", s.createTransaction)
 	s.Router.GET("/transactions/:id", s.getTransaction)
 	s.Router.GET("/transactions", s.listTransactions)
@@ -92,7 +87,6 @@ func (s *Server) setupRoutes() {
 	s.Router.PUT("/transactions", s.updateTransaction)
 	s.Router.DELETE("/transactions/:id", s.deleteTransaction)
 
-	// Receipt routes
 	s.Router.POST("/receipts", s.createReceipt)
 	s.Router.GET("/receipts/transaction/:transaction_id", s.getReceiptByTransactionID)
 	s.Router.DELETE("/receipts/:id", s.deleteReceipt)
@@ -131,7 +125,6 @@ func (s *Server) Start(address string) error {
 	return nil
 }
 
-// Getter methods (jika masih dibutuhkan untuk backward compatibility)
 func (s *Server) GetStore() db.Store {
 	return s.Store
 }

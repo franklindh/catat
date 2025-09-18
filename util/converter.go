@@ -14,13 +14,5 @@ func ParseUUID(s string) (pgtype.UUID, error) {
 }
 
 func CreateZeroBalance() pgtype.Numeric {
-	// Jika Anda menggunakan math/big
-	// return pgtype.Numeric{
-	// 	Int:   big.NewInt(0),
-	// 	Exp:   0,
-	// 	Valid: true,
-	// }
-
-	// Atau jika menggunakan cara lain sesuai kebutuhan
 	return pgtype.Numeric{Valid: true}
 }

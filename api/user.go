@@ -125,7 +125,7 @@ func (s *Server) listUsers(ctx *gin.Context) {
 		return
 	}
 
-	total := int64(len(users)) // Note: You might want to add a CountUsers query
+	total := int64(len(users))
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"data": users,
