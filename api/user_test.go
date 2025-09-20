@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -37,19 +38,22 @@ func TestCreateUserAPI(t *testing.T) {
 				"password": "password123"
 			}`,
 			setupMock: func(store *mockdb.MockStore) {
-				arg := db.CreateUserParams{
-					Email:    "test@example.com",
-					Name:     "Test User",
-					Password: "password123",
-				}
 				store.EXPECT().
-					CreateUser(gomock.Any(), gomock.Eq(arg)).
-					Return(db.CreateUserRow{
-						ID:        pgtype.UUID{Bytes: userID, Valid: true},
-						Email:     "test@example.com",
-						Name:      "Test User",
-						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-					}, nil)
+					CreateUser(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, arg db.CreateUserParams) (db.CreateUserRow, error) {
+						err := util.CheckPasswordHash("password123", arg.Password)
+						require.NoError(t, err)
+
+						require.Equal(t, "test@example.com", arg.Email)
+						require.Equal(t, "Test User", arg.Name)
+
+						return db.CreateUserRow{
+							ID:        pgtype.UUID{Bytes: [16]byte{1, 2, 3, 4}, Valid: true},
+							Email:     arg.Email,
+							Name:      arg.Name,
+							CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+						}, nil
+					})
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusCreated, recorder.Code)
@@ -581,7 +585,7 @@ func TestUpdateUserAPI(t *testing.T) {
 			}
 			server.setupRoutes()
 
-			req := httptest.NewRequest(http.MethodPut, "/users", bytes.NewBufferString(tc.body))
+			req := httptest.NewRequest(http.MethodPatch, "/users", bytes.NewBufferString(tc.body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 

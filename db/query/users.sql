@@ -24,7 +24,7 @@ SET
   password = COALESCE(sqlc.narg(password), password),
   password_changed_at = COALESCE(sqlc.narg(password_changed_at), password_changed_at),
   updated_at = now()
-WHERE id = $1
+WHERE id = sqlc.arg(id)
 RETURNING id, email, name, created_at, updated_at;
 
 -- name: DeleteUser :exec

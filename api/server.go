@@ -70,7 +70,7 @@ func (s *Server) setupRoutes() {
 	s.Router.GET("/users/:id", s.getUserByID)
 	s.Router.GET("/users", s.getUserByEmail)
 	s.Router.GET("/users/list", s.listUsers)
-	s.Router.PUT("/users", s.updateUser)
+	s.Router.PATCH("/users", s.updateUser)
 	s.Router.DELETE("/users/:id", s.deleteUser)
 
 	s.Router.POST("/categories", s.createCategory)

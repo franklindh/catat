@@ -31,8 +31,8 @@ type listUsersRequest struct {
 
 type updateUserRequest struct {
 	ID    string `json:"id" binding:"required,uuid"`
-	Email string `json:"email" binding:"required,email"`
-	Name  string `json:"name" binding:"required"`
+	Email string `json:"email,omitempty" binding:"omitempty,email"`
+	Name  string `json:"name,omitempty" binding:"omitempty"`
 }
 
 type deleteUserRequest struct {
@@ -46,10 +46,12 @@ func (s *Server) createUser(ctx *gin.Context) {
 		return
 	}
 
+	hashedPassword, _ := util.HashPassword(req.Password)
+
 	arg := db.CreateUserParams{
 		Email:    req.Email,
 		Name:     req.Name,
-		Password: req.Password,
+		Password: hashedPassword,
 	}
 
 	user, err := s.Store.CreateUser(ctx, arg)
@@ -77,7 +79,7 @@ func (s *Server) getUserByID(ctx *gin.Context) {
 	user, err := s.Store.GetUserByID(ctx, userID)
 	if err != nil {
 		if strings.Contains(err.Error(), "no rows in result set") {
-			ctx.JSON(http.StatusNotFound, util.ErrorResponseWithMessage("account not found"))
+			ctx.JSON(http.StatusNotFound, util.ErrorResponseWithMessage("user not found"))
 			return
 		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
@@ -160,9 +162,15 @@ func (s *Server) updateUser(ctx *gin.Context) {
 	}
 
 	arg := db.UpdateUserParams{
-		ID:    userID,
-		Email: pgtype.Text{String: req.Email, Valid: true},
-		Name:  pgtype.Text{String: req.Name, Valid: true},
+		ID: userID,
+		Email: pgtype.Text{
+			String: req.Email,
+			Valid:  req.Email != "",
+		},
+		Name: pgtype.Text{
+			String: req.Name,
+			Valid:  req.Name != "",
+		},
 	}
 
 	user, err := s.Store.UpdateUser(ctx, arg)
