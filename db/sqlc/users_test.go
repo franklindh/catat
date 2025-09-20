@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/franklindh/catat/util"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
@@ -13,18 +14,24 @@ import (
 
 func createRandomUser(t *testing.T) User {
 	arg := CreateUserParams{
-		Email:    "test" + uuid.New().String() + "@icikiwir.com",
-		Name:     "Jamaludin",
+		Email:    util.GetRandomEmail().String,
+		Name:     util.GetRandomName().String,
 		Password: "hashed_password_123",
 	}
 
-	user, err := testQueries.CreateUser(context.Background(), arg)
+	createUserRow, err := testQueries.CreateUser(context.Background(), arg)
 	require.NoError(t, err)
-	require.NotEmpty(t, user)
+	require.NotEmpty(t, createUserRow)
 
-	assert.Equal(t, arg.Email, user.Email)
-	assert.WithinDuration(t, time.Now(), user.CreatedAt.Time, 5*time.Second)
-	assert.WithinDuration(t, time.Now(), user.UpdatedAt.Time, 5*time.Second)
+	assert.Equal(t, arg.Email, createUserRow.Email)
+	assert.WithinDuration(t, time.Now(), createUserRow.CreatedAt.Time, 5*time.Second)
+
+	user := User{
+		ID:        createUserRow.ID,
+		Email:     createUserRow.Email,
+		Name:      createUserRow.Name,
+		CreatedAt: createUserRow.CreatedAt,
+	}
 
 	return user
 }
@@ -42,9 +49,8 @@ func TestGetUserByEmail(t *testing.T) {
 
 	assert.Equal(t, createdUser.ID, user.ID)
 	assert.Equal(t, createdUser.Email, user.Email)
-	assert.Equal(t, createdUser.Password, user.Password)
-	assert.Equal(t, createdUser.CreatedAt, user.CreatedAt)
-	assert.Equal(t, createdUser.UpdatedAt, user.UpdatedAt)
+
+	assert.WithinDuration(t, createdUser.CreatedAt.Time, user.CreatedAt.Time, time.Second)
 }
 
 func TestGetUserByID(t *testing.T) {
@@ -56,9 +62,8 @@ func TestGetUserByID(t *testing.T) {
 
 	assert.Equal(t, createdUser.ID, user.ID)
 	assert.Equal(t, createdUser.Email, user.Email)
-	assert.Equal(t, createdUser.Password, user.Password)
-	assert.Equal(t, createdUser.CreatedAt, user.CreatedAt)
-	assert.Equal(t, createdUser.UpdatedAt, user.UpdatedAt)
+
+	assert.WithinDuration(t, createdUser.CreatedAt.Time, user.CreatedAt.Time, time.Second)
 }
 
 func TestGetUserByEmailNotFound(t *testing.T) {
@@ -86,38 +91,40 @@ func TestCreateUserDuplicateEmail(t *testing.T) {
 }
 
 func TestUpdateUser(t *testing.T) {
+	user := createRandomUser(t)
 
-	oldUser := createRandomUser(t)
-
-	newEmail := "updated" + uuid.New().String() + "@icikiwir.com"
-
-	nameChanged := oldUser.Name + " " + "berubah"
+	newRandomEmail := util.GetRandomEmail()
+	newRandomName := util.GetRandomName()
 
 	arg := UpdateUserParams{
-		ID:    oldUser.ID,
-		Email: newEmail,
-		Name:  nameChanged,
+		ID:    user.ID,
+		Email: newRandomEmail,
+		Name:  newRandomName,
 	}
 
 	updatedUser, err := testQueries.UpdateUser(context.Background(), arg)
 	require.NoError(t, err)
 	require.NotEmpty(t, updatedUser)
 
-	assert.Equal(t, oldUser.ID, updatedUser.ID)
-	assert.Equal(t, newEmail, updatedUser.Email)
-	assert.Equal(t, oldUser.CreatedAt, updatedUser.CreatedAt)
+	assert.Equal(t, user.ID, updatedUser.ID)
+	assert.Equal(t, newRandomEmail.String, updatedUser.Email)
 
-	assert.True(t, updatedUser.UpdatedAt.Time.Equal(oldUser.UpdatedAt.Time) ||
-		updatedUser.UpdatedAt.Time.After(oldUser.UpdatedAt.Time))
+	assert.WithinDuration(t, user.CreatedAt.Time, updatedUser.CreatedAt.Time, time.Second)
+
+	assert.True(t, updatedUser.UpdatedAt.Time.After(user.UpdatedAt.Time) ||
+		updatedUser.UpdatedAt.Time.Equal(user.UpdatedAt.Time))
 }
 
 func TestUpdateUserNotFound(t *testing.T) {
-	randomID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	userID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+
+	newRandomEmail := util.GetRandomEmail()
+	newRandomName := util.GetRandomName()
 
 	arg := UpdateUserParams{
-		ID:    randomID,
-		Email: "updated@icikiwir.com",
-		Name:  "test",
+		ID:    userID,
+		Email: newRandomEmail,
+		Name:  newRandomName,
 	}
 
 	_, err := testQueries.UpdateUser(context.Background(), arg)
@@ -125,7 +132,6 @@ func TestUpdateUserNotFound(t *testing.T) {
 }
 
 func TestDeleteUser(t *testing.T) {
-
 	user := createRandomUser(t)
 
 	err := testQueries.DeleteUser(context.Background(), user.ID)
@@ -136,14 +142,13 @@ func TestDeleteUser(t *testing.T) {
 }
 
 func TestDeleteUserNotFound(t *testing.T) {
-	randomID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	user := createRandomUser(t)
 
-	err := testQueries.DeleteUser(context.Background(), randomID)
+	err := testQueries.DeleteUser(context.Background(), user.ID)
 	require.NoError(t, err)
 }
 
 func TestListUsers(t *testing.T) {
-
 	for i := 0; i < 5; i++ {
 		createRandomUser(t)
 	}

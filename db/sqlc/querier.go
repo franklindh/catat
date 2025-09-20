@@ -16,7 +16,7 @@ type Querier interface {
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
 	CreateReceipt(ctx context.Context, arg CreateReceiptParams) (Receipt, error)
 	CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error)
-	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	DeleteAccount(ctx context.Context, arg DeleteAccountParams) error
 	DeleteCategory(ctx context.Context, arg DeleteCategoryParams) error
 	DeleteReceipt(ctx context.Context, id pgtype.UUID) error
@@ -26,8 +26,8 @@ type Querier interface {
 	GetCategory(ctx context.Context, arg GetCategoryParams) (Category, error)
 	GetReceiptByTransactionID(ctx context.Context, transactionID pgtype.UUID) (Receipt, error)
 	GetTransaction(ctx context.Context, arg GetTransactionParams) (Transaction, error)
-	GetUserByEmail(ctx context.Context, email string) (User, error)
-	GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
+	GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error)
+	GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error)
 	ListAccounts(ctx context.Context, arg ListAccountsParams) ([]Account, error)
 	ListCategories(ctx context.Context, userID pgtype.UUID) ([]Category, error)
 	ListTransactions(ctx context.Context, arg ListTransactionsParams) ([]Transaction, error)

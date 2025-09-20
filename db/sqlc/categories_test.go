@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/franklindh/catat/util"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
@@ -13,13 +14,20 @@ import (
 
 func createTestUserForCategory(t *testing.T) User {
 	arg := CreateUserParams{
-		Email:    "test" + uuid.New().String() + "@example.com",
-		Password: "hashed_password_123",
+		Email:    util.GetRandomEmail().String,
+		Password: util.GetRandomName().String,
 	}
 
-	user, err := testQueries.CreateUser(context.Background(), arg)
+	createUserRow, err := testQueries.CreateUser(context.Background(), arg)
 	require.NoError(t, err)
-	require.NotEmpty(t, user)
+	require.NotEmpty(t, createUserRow)
+
+	user := User{
+		ID:        createUserRow.ID,
+		Email:     createUserRow.Email,
+		Name:      createUserRow.Name,
+		CreatedAt: createUserRow.CreatedAt,
+	}
 
 	return user
 }

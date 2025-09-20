@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/franklindh/catat/util"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,13 +27,20 @@ func toTime(t pgtype.Timestamptz) time.Time {
 
 func createTestUser(t *testing.T) User {
 	arg := CreateUserParams{
-		Email:    "test" + uuid.New().String() + "@example.com",
-		Password: "hashed_password_123",
+		Email:    util.GetRandomEmail().String,
+		Password: util.GetRandomName().String,
 	}
 
-	user, err := testQueries.CreateUser(context.Background(), arg)
+	createUserRow, err := testQueries.CreateUser(context.Background(), arg)
 	require.NoError(t, err)
-	require.NotEmpty(t, user)
+	require.NotEmpty(t, createUserRow)
+
+	user := User{
+		ID:        createUserRow.ID,
+		Email:     createUserRow.Email,
+		Name:      createUserRow.Name,
+		CreatedAt: createUserRow.CreatedAt,
+	}
 
 	return user
 }
@@ -71,7 +78,6 @@ func numericToRat(n pgtype.Numeric) *big.Rat {
 }
 
 func TestListAccountsPaginated(t *testing.T) {
-
 	user := createTestUser(t)
 
 	accountNames := []string{"Account A", "Account B", "Account C", "Account D", "Account E"}
@@ -120,7 +126,6 @@ func TestListAccountsPaginated(t *testing.T) {
 }
 
 func TestCountAccountsByUser(t *testing.T) {
-
 	user := createTestUser(t)
 
 	initialCount, err := testQueries.CountAccountsByUser(context.Background(), user.ID)

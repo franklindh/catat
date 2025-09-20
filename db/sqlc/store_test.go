@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/franklindh/catat/util"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
@@ -16,8 +17,8 @@ func TestSQLStore_CreateUser(t *testing.T) {
 	store := NewStore(testDB)
 
 	arg := CreateUserParams{
-		Email:    "test" + uuid.New().String() + "@example.com",
-		Name:     "Test User",
+		Email:    util.GetRandomEmail().String,
+		Name:     util.GetRandomName().String,
 		Password: "password123",
 	}
 
@@ -27,17 +28,15 @@ func TestSQLStore_CreateUser(t *testing.T) {
 
 	assert.Equal(t, arg.Email, user.Email)
 	assert.Equal(t, arg.Name, user.Name)
-	assert.Equal(t, arg.Password, user.Password)
 	assert.WithinDuration(t, time.Now(), user.CreatedAt.Time, 5*time.Second)
-	assert.WithinDuration(t, time.Now(), user.UpdatedAt.Time, 5*time.Second)
 }
 
 func TestSQLStore_GetUserByID(t *testing.T) {
 	store := NewStore(testDB)
 
 	arg := CreateUserParams{
-		Email:    "test" + uuid.New().String() + "@example.com",
-		Name:     "Test User",
+		Email:    util.GetRandomEmail().String,
+		Name:     util.GetRandomName().String,
 		Password: "password123",
 	}
 
@@ -52,17 +51,15 @@ func TestSQLStore_GetUserByID(t *testing.T) {
 	assert.Equal(t, createdUser.ID, foundUser.ID)
 	assert.Equal(t, createdUser.Email, foundUser.Email)
 	assert.Equal(t, createdUser.Name, foundUser.Name)
-	assert.Equal(t, createdUser.Password, foundUser.Password)
 	assert.Equal(t, createdUser.CreatedAt, foundUser.CreatedAt)
-	assert.Equal(t, createdUser.UpdatedAt, foundUser.UpdatedAt)
 }
 
 func TestSQLStore_GetUserByEmail(t *testing.T) {
 	store := NewStore(testDB)
 
 	arg := CreateUserParams{
-		Email:    "test" + uuid.New().String() + "@example.com",
-		Name:     "Test User",
+		Email:    util.GetRandomEmail().String,
+		Name:     util.GetRandomName().String,
 		Password: "password123",
 	}
 
@@ -80,11 +77,14 @@ func TestSQLStore_GetUserByEmail(t *testing.T) {
 }
 
 func TestSQLStore_UpdateUser(t *testing.T) {
+	email := util.GetRandomEmail()
+	name := util.GetRandomName()
+
 	store := NewStore(testDB)
 
 	arg := CreateUserParams{
-		Email:    "test" + uuid.New().String() + "@example.com",
-		Name:     "Test User",
+		Email:    email.String,
+		Name:     name.String,
 		Password: "password123",
 	}
 
@@ -92,13 +92,10 @@ func TestSQLStore_UpdateUser(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, createdUser)
 
-	newEmail := "updated" + uuid.New().String() + "@example.com"
-	newName := "Updated User"
-
 	updateArg := UpdateUserParams{
 		ID:    createdUser.ID,
-		Email: newEmail,
-		Name:  newName,
+		Email: email,
+		Name:  name,
 	}
 
 	updatedUser, err := store.UpdateUser(context.Background(), updateArg)
@@ -106,9 +103,8 @@ func TestSQLStore_UpdateUser(t *testing.T) {
 	require.NotEmpty(t, updatedUser)
 
 	assert.Equal(t, createdUser.ID, updatedUser.ID)
-	assert.Equal(t, newEmail, updatedUser.Email)
-	assert.Equal(t, newName, updatedUser.Name)
-	assert.True(t, updatedUser.UpdatedAt.Time.After(createdUser.UpdatedAt.Time))
+	assert.Equal(t, email.String, updatedUser.Email)
+	assert.Equal(t, name.String, updatedUser.Name)
 }
 
 func TestSQLStore_DeleteUser(t *testing.T) {

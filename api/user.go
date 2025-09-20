@@ -2,10 +2,12 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	db "github.com/franklindh/catat/db/sqlc"
 	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type createUserRequest struct {
@@ -74,6 +76,10 @@ func (s *Server) getUserByID(ctx *gin.Context) {
 
 	user, err := s.Store.GetUserByID(ctx, userID)
 	if err != nil {
+		if strings.Contains(err.Error(), "no rows in result set") {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponseWithMessage("account not found"))
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
@@ -155,8 +161,8 @@ func (s *Server) updateUser(ctx *gin.Context) {
 
 	arg := db.UpdateUserParams{
 		ID:    userID,
-		Email: req.Email,
-		Name:  req.Name,
+		Email: pgtype.Text{String: req.Email, Valid: true},
+		Name:  pgtype.Text{String: req.Name, Valid: true},
 	}
 
 	user, err := s.Store.UpdateUser(ctx, arg)

@@ -12,6 +12,7 @@ import (
 
 	mockdb "github.com/franklindh/catat/db/mock"
 	db "github.com/franklindh/catat/db/sqlc"
+	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
@@ -43,11 +44,10 @@ func TestCreateUserAPI(t *testing.T) {
 				}
 				store.EXPECT().
 					CreateUser(gomock.Any(), gomock.Eq(arg)).
-					Return(db.User{
+					Return(db.CreateUserRow{
 						ID:        pgtype.UUID{Bytes: userID, Valid: true},
 						Email:     "test@example.com",
 						Name:      "Test User",
-						Password:  "hashed_password",
 						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 					}, nil)
 			},
@@ -124,7 +124,7 @@ func TestCreateUserAPI(t *testing.T) {
 			setupMock: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					CreateUser(gomock.Any(), gomock.Any()).
-					Return(db.User{}, sql.ErrConnDone)
+					Return(db.CreateUserRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -171,13 +171,11 @@ func TestGetUserByIDAPI(t *testing.T) {
 				userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 				store.EXPECT().
 					GetUserByID(gomock.Any(), gomock.Eq(userUUID)).
-					Return(db.User{
+					Return(db.GetUserByIDRow{
 						ID:        pgtype.UUID{Bytes: userID, Valid: true},
 						Email:     "test@example.com",
 						Name:      "Test User",
-						Password:  "hashed_password",
 						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-						UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 					}, nil)
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
@@ -203,10 +201,10 @@ func TestGetUserByIDAPI(t *testing.T) {
 				userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 				store.EXPECT().
 					GetUserByID(gomock.Any(), gomock.Eq(userUUID)).
-					Return(db.User{}, sql.ErrNoRows)
+					Return(db.GetUserByIDRow{}, sql.ErrNoRows)
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusInternalServerError, recorder.Code)
+				require.Equal(t, http.StatusNotFound, recorder.Code)
 			},
 		},
 		{
@@ -216,7 +214,7 @@ func TestGetUserByIDAPI(t *testing.T) {
 				userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 				store.EXPECT().
 					GetUserByID(gomock.Any(), gomock.Eq(userUUID)).
-					Return(db.User{}, sql.ErrConnDone)
+					Return(db.GetUserByIDRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -261,11 +259,10 @@ func TestGetUserByEmailAPI(t *testing.T) {
 			setupMock: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetUserByEmail(gomock.Any(), gomock.Eq("test@example.com")).
-					Return(db.User{
+					Return(db.GetUserByEmailRow{
 						ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
 						Email:     "test@example.com",
 						Name:      "Test User",
-						Password:  "hashed_password",
 						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 						UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 					}, nil)
@@ -292,7 +289,7 @@ func TestGetUserByEmailAPI(t *testing.T) {
 			setupMock: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetUserByEmail(gomock.Any(), gomock.Eq("notfound@example.com")).
-					Return(db.User{}, sql.ErrNoRows)
+					Return(db.GetUserByEmailRow{}, sql.ErrNoRows)
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -304,7 +301,7 @@ func TestGetUserByEmailAPI(t *testing.T) {
 			setupMock: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetUserByEmail(gomock.Any(), gomock.Eq("error@example.com")).
-					Return(db.User{}, sql.ErrConnDone)
+					Return(db.GetUserByEmailRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -456,6 +453,9 @@ func TestListUsersAPI(t *testing.T) {
 }
 
 func TestUpdateUserAPI(t *testing.T) {
+	email := util.GetRandomEmail()
+	name := util.GetRandomName()
+
 	testCases := []struct {
 		name          string
 		body          string
@@ -466,21 +466,21 @@ func TestUpdateUserAPI(t *testing.T) {
 			name: "OK",
 			body: fmt.Sprintf(`{
 				"id": "%s",
-				"email": "updated@example.com",
-				"name": "Updated User"
-			}`, userID.String()),
+				"email": "%s",
+				"name": "%s"
+			}`, userID.String(), email.String, name.String),
 			setupMock: func(store *mockdb.MockStore) {
 				arg := db.UpdateUserParams{
 					ID:    pgtype.UUID{Bytes: userID, Valid: true},
-					Email: "updated@example.com",
-					Name:  "Updated User",
+					Email: pgtype.Text{String: email.String, Valid: true},
+					Name:  pgtype.Text{String: name.String, Valid: true},
 				}
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Eq(arg)).
 					Return(db.UpdateUserRow{
 						ID:        pgtype.UUID{Bytes: userID, Valid: true},
-						Email:     "updated@example.com",
-						Name:      "Updated User",
+						Email:     email.String,
+						Name:      name.String,
 						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 						UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 					}, nil)
@@ -491,11 +491,11 @@ func TestUpdateUserAPI(t *testing.T) {
 		},
 		{
 			name: "InvalidUserID",
-			body: `{
+			body: fmt.Sprintf(`{
 				"id": "invalid-uuid",
-				"email": "updated@example.com",
-				"name": "Updated User"
-			}`,
+				"email": "%s",
+				"name": "%s"
+			}`, email.String, name.String),
 			setupMock: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Any()).
@@ -510,8 +510,8 @@ func TestUpdateUserAPI(t *testing.T) {
 			body: fmt.Sprintf(`{
 				"id": "%s",
 				"email": "invalid-email",
-				"name": "Updated User"
-			}`, userID.String()),
+				"name": "%s"
+			}`, userID.String(), name.String),
 			setupMock: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Any()).
@@ -525,8 +525,8 @@ func TestUpdateUserAPI(t *testing.T) {
 			name: "MissingName",
 			body: fmt.Sprintf(`{
 				"id": "%s",
-				"email": "updated@example.com"
-			}`, userID.String()),
+				"email": "%s",
+			}`, userID.String(), email.String),
 			setupMock: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Any()).
@@ -552,9 +552,9 @@ func TestUpdateUserAPI(t *testing.T) {
 			name: "StoreError",
 			body: fmt.Sprintf(`{
 				"id": "%s",
-				"email": "updated@example.com",
-				"name": "Updated User"
-			}`, userID.String()),
+				"email": "%s",
+				"name": "%s"
+			}`, userID.String(), email.String, name.String),
 			setupMock: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Any()).
