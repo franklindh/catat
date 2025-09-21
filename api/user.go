@@ -1,12 +1,14 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	db "github.com/franklindh/catat/db/sqlc"
 	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -46,7 +48,11 @@ func (s *Server) createUser(ctx *gin.Context) {
 		return
 	}
 
-	hashedPassword, _ := util.HashPassword(req.Password)
+	hashedPassword, err := util.HashPassword(req.Password)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
+		return
+	}
 
 	arg := db.CreateUserParams{
 		Email:    req.Email,
@@ -56,6 +62,16 @@ func (s *Server) createUser(ctx *gin.Context) {
 
 	user, err := s.Store.CreateUser(ctx, arg)
 	if err != nil {
+		if pqErr, ok := err.(*pgconn.PgError); ok {
+			switch pqErr.Code {
+			case "23505":
+				ctx.JSON(http.StatusForbidden, util.ErrorResponse(errors.New("email already exists")))
+				return
+			default:
+				ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(errors.New("database error")))
+				return
+			}
+		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
