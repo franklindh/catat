@@ -1,37 +1,33 @@
--- name: CreateUser :one
-INSERT INTO users (
-  email, 
-  name,
-  password
-) VALUES (
-  $1, $2, $3
-)
-RETURNING id, email, name, created_at;
+-- name: GetUser :one
+SELECT id, google_id, email, name, balance, avatar_url, created_at, updated_at
+FROM users
+WHERE id = $1 LIMIT 1;
+
+-- name: GetUserByGoogleID :one
+SELECT id, google_id, email, name, balance, avatar_url, created_at, updated_at
+FROM users
+WHERE google_id = $1 LIMIT 1;
 
 -- name: GetUserByEmail :one
-SELECT id, email, name, created_at, updated_at FROM users
-WHERE email = $1;
+SELECT id, google_id, email, name, balance, avatar_url, created_at, updated_at
+FROM users
+WHERE email = $1 LIMIT 1;
 
--- name: GetUserByID :one
-SELECT id, email, name, created_at, updated_at FROM users
+-- name: CreateUser :one
+INSERT INTO users (google_id, email, name, balance, avatar_url)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, google_id, email, name, balance, avatar_url, created_at, updated_at;
+
+-- name: UpdateUser :exec
+UPDATE users
+SET name = $2, avatar_url = $3, updated_at = NOW()
 WHERE id = $1;
 
--- name: UpdateUser :one
+-- name: UpdateUserBalance :exec
 UPDATE users
-SET
-  email = COALESCE(sqlc.narg(email), email),
-  name = COALESCE(sqlc.narg(name), name),
-  password = COALESCE(sqlc.narg(password), password),
-  password_changed_at = COALESCE(sqlc.narg(password_changed_at), password_changed_at),
-  updated_at = now()
-WHERE id = sqlc.arg(id)
-RETURNING id, email, name, created_at, updated_at;
+SET balance = $2, updated_at = NOW()
+WHERE id = $1;
 
 -- name: DeleteUser :exec
 DELETE FROM users
 WHERE id = $1;
-
--- name: ListUsers :many
-SELECT id, email, name, created_at, updated_at FROM users
-ORDER BY id
-LIMIT $1 OFFSET $2;

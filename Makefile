@@ -9,6 +9,9 @@ createdb:
 dropdb:
 	docker exec -it postgres dropdb catat_db
 
+new_migration:
+	migrate create -ext sql -dir db/migration -seq $(name)
+
 migrateup:
 	migrate -path db/migration/ -database $(URL) -verbose up
 
