@@ -19,10 +19,14 @@ INSERT INTO categories (user_id, name, icon_url)
 VALUES ($1, $2, $3)
 RETURNING id, user_id, name, icon_url, created_at, updated_at;
 
--- name: UpdateCategory :exec
+-- name: UpdateCategory :one
 UPDATE categories
-SET name = $2, icon_url = $3, updated_at = NOW()
-WHERE id = $1 AND user_id = $4;
+SET 
+  name = COALESCE($2, name), 
+  icon_url = COALESCE($3, icon_url), 
+  updated_at = NOW()
+WHERE id = $1 AND user_id = $4
+RETURNING id, user_id, name, icon_url, created_at, updated_at; 
 
 -- name: DeleteCategory :exec
 DELETE FROM categories

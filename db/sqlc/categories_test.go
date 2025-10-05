@@ -2,160 +2,139 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"testing"
-	"time"
 
 	"github.com/franklindh/catat/util"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func createTestUserForCategory(t *testing.T) User {
-	arg := CreateUserParams{
-		Email:    util.GetRandomEmail().String,
-		Password: util.GetRandomName().String,
-	}
-
-	createUserRow, err := testQueries.CreateUser(context.Background(), arg)
-	require.NoError(t, err)
-	require.NotEmpty(t, createUserRow)
-
-	user := User{
-		ID:        createUserRow.ID,
-		Email:     createUserRow.Email,
-		Name:      createUserRow.Name,
-		CreatedAt: createUserRow.CreatedAt,
-	}
-
-	return user
-}
-
-func createTestCategory(t *testing.T, userID pgtype.UUID) Category {
+func createRandomCategoryForTest(t *testing.T, userID pgtype.UUID) Category {
 	arg := CreateCategoryParams{
-		UserID: userID,
-		Name:   "Test Category " + uuid.New().String()[:8],
-		Type:   "expense",
+		UserID:  userID,
+		Name:    util.RandomString(10),
+		IconUrl: pgtype.Text{String: util.RandomString(20), Valid: true},
 	}
 
-	category, err := testQueries.CreateCategory(context.Background(), arg)
+	category, err := testStore.CreateCategory(context.Background(), arg)
 	require.NoError(t, err)
 	require.NotEmpty(t, category)
 
-	assert.Equal(t, arg.Name, category.Name)
-	assert.Equal(t, arg.Type, category.Type)
-	assert.Equal(t, arg.UserID, category.UserID)
+	require.Equal(t, arg.UserID, category.UserID)
+	require.Equal(t, arg.Name, category.Name)
+	require.Equal(t, arg.IconUrl, category.IconUrl)
 
-	assert.WithinDuration(t, time.Now(), toTime(category.CreatedAt), 5*time.Second)
-	assert.WithinDuration(t, time.Now(), toTime(category.UpdatedAt), 5*time.Second)
+	require.NotZero(t, category.ID)
+	require.NotZero(t, category.CreatedAt)
 
 	return category
 }
 
 func TestCreateCategory(t *testing.T) {
-	user := createTestUserForCategory(t)
-	createTestCategory(t, user.ID)
+	user := createRandomUserForTest(t)
+
+	createRandomCategoryForTest(t, user.ID)
 }
 
 func TestGetCategory(t *testing.T) {
-	user := createTestUserForCategory(t)
-	createdCategory := createTestCategory(t, user.ID)
+	user := createRandomUserForTest(t)
+	category1 := createRandomCategoryForTest(t, user.ID)
 
-	arg := GetCategoryParams{
-		ID:     createdCategory.ID,
-		UserID: user.ID,
-	}
-
-	category, err := testQueries.GetCategory(context.Background(), arg)
+	category2, err := testStore.GetCategory(context.Background(), category1.ID)
 	require.NoError(t, err)
-	require.NotEmpty(t, category)
+	require.NotEmpty(t, category2)
 
-	assert.Equal(t, createdCategory.ID, category.ID)
-	assert.Equal(t, createdCategory.Name, category.Name)
-	assert.Equal(t, createdCategory.Type, category.Type)
-	assert.Equal(t, createdCategory.UserID, category.UserID)
-	assert.Equal(t, createdCategory.CreatedAt, category.CreatedAt)
-	assert.Equal(t, createdCategory.UpdatedAt, category.UpdatedAt)
+	require.Equal(t, category1.ID, category2.ID)
+	require.Equal(t, category1.UserID, category2.UserID)
+	require.Equal(t, category1.Name, category2.Name)
+	require.Equal(t, category1.IconUrl, category2.IconUrl)
+	require.Equal(t, category1.CreatedAt, category2.CreatedAt)
+	require.Equal(t, category1.UpdatedAt, category2.UpdatedAt)
 }
 
-func TestListCategories(t *testing.T) {
-	user := createTestUserForCategory(t)
+func TestGetCategoriesByUser(t *testing.T) {
+	user := createRandomUserForTest(t)
 
-	for i := 0; i < 3; i++ {
-		createTestCategory(t, user.ID)
+	n := 5
+	categories1 := make([]Category, n)
+	for i := 0; i < n; i++ {
+		categories1[i] = createRandomCategoryForTest(t, user.ID)
 	}
 
-	categories, err := testQueries.ListCategories(context.Background(), user.ID)
+	categories2, err := testStore.GetCategoriesByUser(context.Background(), user.ID)
 	require.NoError(t, err)
-	require.Len(t, categories, 3)
+	require.NotEmpty(t, categories2)
 
-	for _, category := range categories {
-		assert.Equal(t, user.ID, category.UserID)
+	require.Len(t, categories2, n)
+	for _, category := range categories2 {
+		require.Equal(t, user.ID, category.UserID)
 	}
+
+}
+
+func TestGetCategoryByName(t *testing.T) {
+	user := createRandomUserForTest(t)
+
+	category1 := createRandomCategoryForTest(t, user.ID)
+	nameToFind := category1.Name
+
+	arg := GetCategoryByNameParams{
+		UserID: user.ID,
+		Name:   nameToFind,
+	}
+	category2, err := testStore.GetCategoryByName(context.Background(), arg)
+	require.NoError(t, err)
+	require.NotEmpty(t, category2)
+
+	require.Equal(t, category1.ID, category2.ID)
+	require.Equal(t, category1.UserID, category2.UserID)
+	require.Equal(t, category1.Name, category2.Name)
+	require.Equal(t, category1.IconUrl, category2.IconUrl)
+	require.Equal(t, category1.CreatedAt, category2.CreatedAt)
+	require.Equal(t, category1.UpdatedAt, category2.UpdatedAt)
 }
 
 func TestUpdateCategory(t *testing.T) {
-	user := createTestUserForCategory(t)
-	createdCategory := createTestCategory(t, user.ID)
+	user := createRandomUserForTest(t)
+	category1 := createRandomCategoryForTest(t, user.ID)
+
+	newName := util.RandomString(12)
+	newIconUrl := pgtype.Text{String: util.RandomString(25), Valid: true}
 
 	arg := UpdateCategoryParams{
-		ID:     createdCategory.ID,
-		Name:   "Updated Category Name",
-		Type:   "income",
-		UserID: user.ID,
+		ID:      category1.ID,
+		Name:    newName,
+		IconUrl: newIconUrl,
+		UserID:  user.ID,
 	}
 
-	updatedCategory, err := testQueries.UpdateCategory(context.Background(), arg)
+	category2, err := testStore.UpdateCategory(context.Background(), arg)
 	require.NoError(t, err)
-	require.NotEmpty(t, updatedCategory)
+	require.NotEmpty(t, category2)
 
-	assert.Equal(t, arg.Name, updatedCategory.Name)
-	assert.Equal(t, arg.Type, updatedCategory.Type)
+	require.Equal(t, category1.ID, category2.ID)
+	require.Equal(t, user.ID, category2.UserID)
+	require.Equal(t, newName, category2.Name)
+	require.Equal(t, newIconUrl, category2.IconUrl)
 
-	createdTime := toTime(createdCategory.UpdatedAt)
-	updatedTime := toTime(updatedCategory.UpdatedAt)
-	assert.True(t, updatedTime.After(createdTime) || updatedTime.Equal(createdTime))
+	require.Equal(t, category1.CreatedAt, category2.CreatedAt)
+
+	require.True(t, category2.UpdatedAt.Time.After(category1.UpdatedAt.Time))
 }
 
 func TestDeleteCategory(t *testing.T) {
-	user := createTestUserForCategory(t)
-	createdCategory := createTestCategory(t, user.ID)
+	user := createRandomUserForTest(t)
+	category1 := createRandomCategoryForTest(t, user.ID)
 
-	arg := DeleteCategoryParams{
-		ID:     createdCategory.ID,
+	err := testStore.DeleteCategory(context.Background(), DeleteCategoryParams{
+		ID:     category1.ID,
 		UserID: user.ID,
-	}
-
-	err := testQueries.DeleteCategory(context.Background(), arg)
+	})
 	require.NoError(t, err)
 
-	_, err = testQueries.GetCategory(context.Background(), GetCategoryParams{
-		ID:     createdCategory.ID,
-		UserID: user.ID,
-	})
-	assert.Error(t, err)
-}
-
-func TestGetCategoryNotFound(t *testing.T) {
-	user := createTestUserForCategory(t)
-	randomID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-
-	_, err := testQueries.GetCategory(context.Background(), GetCategoryParams{
-		ID:     randomID,
-		UserID: user.ID,
-	})
-	assert.Error(t, err)
-}
-
-func TestDeleteCategoryNotFound(t *testing.T) {
-	user := createTestUserForCategory(t)
-	randomID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-
-	err := testQueries.DeleteCategory(context.Background(), DeleteCategoryParams{
-		ID:     randomID,
-		UserID: user.ID,
-	})
-
-	assert.NoError(t, err)
+	_, err = testStore.GetCategory(context.Background(), category1.ID)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, sql.ErrNoRows), "Expected sql.ErrNoRows, got %v", err)
 }

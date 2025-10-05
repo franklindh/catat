@@ -5,8 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,6 +14,8 @@ import (
 
 	mockdb "github.com/franklindh/catat/db/mock"
 	db "github.com/franklindh/catat/db/sqlc"
+	"github.com/franklindh/catat/token"
+	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
@@ -21,656 +23,789 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var categoryID = uuid.MustParse("96d7d741-5104-4db3-a8bd-29719d483226")
-
 func TestCreateCategoryAPI(t *testing.T) {
+	user := randomUser()
+	category := randomCategory(user.ID)
+
 	testCases := []struct {
 		name          string
-		body          string
-		setupMock     func(store *mockdb.MockStore)
-		checkResponse func(recorder *httptest.ResponseRecorder)
+		body          gin.H
+		setupAuth     func(t *testing.T, request *http.Request, tokenMaker token.Maker)
+		buildStubs    func(store *mockdb.MockStore)
+		checkResponse func(t *testing.T, recorder *httptest.ResponseRecorder)
 	}{
 		{
 			name: "OK",
-			body: `{
-				"user_id": "b25d7919-6071-422a-85f9-c88afb3f63ad",
-				"name": "Test Category",
-				"type": "income"
-			}`,
-			setupMock: func(store *mockdb.MockStore) {
+			body: gin.H{
+				"name":     category.Name,
+				"icon_url": category.IconUrl.String,
+			},
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				expectedArg := db.CreateCategoryParams{
+					UserID:  user.ID,
+					Name:    category.Name,
+					IconUrl: category.IconUrl,
+				}
 				store.EXPECT().
 					CreateCategory(gomock.Any(), gomock.Any()).
 					DoAndReturn(func(ctx context.Context, arg db.CreateCategoryParams) (db.Category, error) {
-						require.Equal(t, "Test Category", arg.Name)
-						require.Equal(t, "income", arg.Type)
-						require.True(t, arg.UserID.Valid)
-						return db.Category{
-							ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
-							UserID:    arg.UserID,
-							Name:      "Test Category",
-							Type:      "income",
-							CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-							UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-						}, nil
-					}).Times(1)
+						require.Equal(t, expectedArg.UserID, arg.UserID)
+						require.Equal(t, expectedArg.Name, arg.Name)
+						require.Equal(t, expectedArg.IconUrl, arg.IconUrl)
+						return category, nil
+					}).
+					Times(1)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusCreated, recorder.Code)
-
-				var responseCategory db.Category
-				err := json.Unmarshal(recorder.Body.Bytes(), &responseCategory)
-				require.NoError(t, err)
-				require.Equal(t, "Test Category", responseCategory.Name)
-				require.Equal(t, "income", responseCategory.Type)
+				requireBodyMatchCategory(t, recorder.Body, category)
 			},
 		},
 		{
-			name: "InvalidUserID",
-			body: `{
-				"user_id": "invalid-uuid",
-				"name": "Test Category",
-				"type": "income"
-			}`,
-			setupMock: func(store *mockdb.MockStore) {
+			name: "NoAuthorization",
+			body: gin.H{
+				"name":     category.Name,
+				"icon_url": category.IconUrl.String,
+			},
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+			},
+			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					CreateCategory(gomock.Any(), gomock.Any()).
 					Times(0)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusUnauthorized, recorder.Code)
+			},
+		},
+		{
+			name: "InternalError",
+			body: gin.H{
+				"name":     category.Name,
+				"icon_url": category.IconUrl.String,
+			},
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+
+				userIDForAuth := util.PgxUUIDToGoogleUUID(user.ID)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					CreateCategory(gomock.Any(), gomock.Any()).
+					Times(1).
+					Return(db.Category{}, sql.ErrConnDone)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusInternalServerError, recorder.Code)
 			},
 		},
 		{
 			name: "MissingName",
-			body: `{
-				"user_id": "b25d7919-6071-422a-85f9-c88afb3f63ad",
-				"type": "income"
-			}`,
-			setupMock: func(store *mockdb.MockStore) {
+			body: gin.H{
+				"icon_url": category.IconUrl.String,
+			},
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+
+				userIDForAuth := util.PgxUUIDToGoogleUUID(user.ID)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					CreateCategory(gomock.Any(), gomock.Any()).
 					Times(0)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusBadRequest, recorder.Code)
-			},
-		},
-		{
-			name: "InvalidType",
-			body: `{
-				"user_id": "b25d7919-6071-422a-85f9-c88afb3f63ad",
-				"name": "Test Category",
-				"type": "invalid-type"
-			}`,
-			setupMock: func(store *mockdb.MockStore) {
-				store.EXPECT().
-					CreateCategory(gomock.Any(), gomock.Any()).
-					Times(0)
-			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-			},
-		},
-		{
-			name: "EmptyBody",
-			body: `{}`,
-			setupMock: func(store *mockdb.MockStore) {
-				store.EXPECT().
-					CreateCategory(gomock.Any(), gomock.Any()).
-					Times(0)
-			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-			},
-		},
-		{
-			name: "DatabaseError",
-			body: `{
-				"user_id": "b25d7919-6071-422a-85f9-c88afb3f63ad",
-				"name": "Test Category",
-				"type": "income"
-			}`,
-			setupMock: func(store *mockdb.MockStore) {
-				store.EXPECT().
-					CreateCategory(gomock.Any(), gomock.Any()).
-					Return(db.Category{}, sql.ErrConnDone).
-					Times(1)
-			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusInternalServerError, recorder.Code)
 			},
 		},
 	}
 
 	for i := range testCases {
 		tc := testCases[i]
+
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
 			store := mockdb.NewMockStore(ctrl)
-			tc.setupMock(store)
+			tc.buildStubs(store)
 
-			server := &Server{
-				Store:  store,
-				Router: gin.Default(),
-			}
-			server.setupRoutes()
+			server := newTestServer(t, store)
+			recorder := httptest.NewRecorder()
 
-			req := httptest.NewRequest(http.MethodPost, "/categories", bytes.NewBufferString(tc.body))
-			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
+			data, err := json.Marshal(tc.body)
+			require.NoError(t, err)
 
-			server.Router.ServeHTTP(w, req)
-			tc.checkResponse(w)
+			url := "/categories"
+			request, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
+			require.NoError(t, err)
+
+			tc.setupAuth(t, request, server.tokenMaker)
+			server.router.ServeHTTP(recorder, request)
+			tc.checkResponse(t, recorder)
 		})
 	}
 }
 
-func TestGetCategoryAPI(t *testing.T) {
+func TestGetCategoriesAPI(t *testing.T) {
+	n := 5
+	user := randomUser()
+	categories := make([]db.Category, n)
+	for i := 0; i < n; i++ {
+		categories[i] = randomCategory(user.ID)
+	}
+
 	testCases := []struct {
 		name          string
-		url           string
-		setupMock     func(store *mockdb.MockStore)
-		checkResponse func(recorder *httptest.ResponseRecorder)
+		setupAuth     func(t *testing.T, request *http.Request, tokenMaker token.Maker)
+		buildStubs    func(store *mockdb.MockStore)
+		checkResponse func(t *testing.T, recorder *httptest.ResponseRecorder)
 	}{
 		{
 			name: "OK",
-			url:  "/categories/" + categoryID.String() + "?user_id=" + userID.String(),
-			setupMock: func(store *mockdb.MockStore) {
-				arg := db.GetCategoryParams{
-					ID:     pgtype.UUID{Bytes: categoryID, Valid: true},
-					UserID: pgtype.UUID{Bytes: userID, Valid: true},
-				}
-				store.EXPECT().
-					GetCategory(gomock.Any(), gomock.Eq(arg)).
-					Return(db.Category{
-						ID:        pgtype.UUID{Bytes: categoryID, Valid: true},
-						UserID:    pgtype.UUID{Bytes: userID, Valid: true},
-						Name:      "Test Category",
-						Type:      "income",
-						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-						UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-					}, nil)
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategoriesByUser(gomock.Any(), user.ID).
+					Times(1).
+					Return(categories, nil)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
-
-				var responseCategory db.Category
-				err := json.Unmarshal(recorder.Body.Bytes(), &responseCategory)
-				require.NoError(t, err)
-				require.Equal(t, "Test Category", responseCategory.Name)
-				require.Equal(t, "income", responseCategory.Type)
+				requireBodyMatchCategories(t, recorder.Body, categories)
 			},
 		},
 		{
-			name: "InvalidURI",
-			url:  "/categories/invalid-uuid?user_id=" + userID.String(),
-			setupMock: func(store *mockdb.MockStore) {
+			name: "NoAuthorization",
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+			},
+			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
-					GetCategory(gomock.Any(), gomock.Any()).
+					GetCategoriesByUser(gomock.Any(), gomock.Any()).
 					Times(0)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "uuid")
-			},
-		},
-		{
-			name: "InvalidQuery",
-			url:  "/categories/" + categoryID.String() + "?user_id=invalid-uuid",
-			setupMock: func(store *mockdb.MockStore) {
-				store.EXPECT().
-					GetCategory(gomock.Any(), gomock.Any()).
-					Times(0)
-			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "uuid")
-			},
-		},
-		{
-			name: "StoreError",
-			url:  "/categories/" + categoryID.String() + "?user_id=" + userID.String(),
-			setupMock: func(store *mockdb.MockStore) {
-				arg := db.GetCategoryParams{
-					ID:     pgtype.UUID{Bytes: categoryID, Valid: true},
-					UserID: pgtype.UUID{Bytes: userID, Valid: true},
-				}
-				store.EXPECT().
-					GetCategory(gomock.Any(), gomock.Eq(arg)).
-					Return(db.Category{}, errors.New("database error"))
-			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusInternalServerError, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "database error")
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusUnauthorized, recorder.Code)
 			},
 		},
 		{
 			name: "NotFound",
-			url:  "/categories/" + categoryID.String() + "?user_id=" + userID.String(),
-			setupMock: func(store *mockdb.MockStore) {
-				arg := db.GetCategoryParams{
-					ID:     pgtype.UUID{Bytes: categoryID, Valid: true},
-					UserID: pgtype.UUID{Bytes: userID, Valid: true},
-				}
-				store.EXPECT().
-					GetCategory(gomock.Any(), gomock.Eq(arg)).
-					Return(db.Category{}, sql.ErrNoRows)
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusNotFound, recorder.Code)
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategoriesByUser(gomock.Any(), user.ID).
+					Times(1).
+					Return([]db.Category{}, sql.ErrNoRows)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, recorder.Code)
+				requireBodyMatchCategories(t, recorder.Body, []db.Category{})
+			},
+		},
+		{
+			name: "InternalError",
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategoriesByUser(gomock.Any(), user.ID).
+					Times(1).
+					Return([]db.Category{}, sql.ErrConnDone)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusInternalServerError, recorder.Code)
 			},
 		},
 	}
 
 	for i := range testCases {
 		tc := testCases[i]
+
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
 			store := mockdb.NewMockStore(ctrl)
-			tc.setupMock(store)
+			tc.buildStubs(store)
 
-			server := &Server{
-				Store:  store,
-				Router: gin.Default(),
-			}
-			server.setupRoutes()
+			server := newTestServer(t, store)
+			recorder := httptest.NewRecorder()
 
-			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
-			w := httptest.NewRecorder()
+			url := "/categories"
+			request, err := http.NewRequest(http.MethodGet, url, nil)
+			require.NoError(t, err)
 
-			server.Router.ServeHTTP(w, req)
-			tc.checkResponse(w)
+			tc.setupAuth(t, request, server.tokenMaker)
+			server.router.ServeHTTP(recorder, request)
+			tc.checkResponse(t, recorder)
 		})
 	}
 }
 
-func TestListCategoriesAPI(t *testing.T) {
+func TestGetCategoryByIDAPI(t *testing.T) {
+	user := randomUser()
+	category := randomCategory(user.ID)
+
 	testCases := []struct {
 		name          string
-		url           string
-		setupMock     func(store *mockdb.MockStore)
-		checkResponse func(recorder *httptest.ResponseRecorder)
+		categoryID    string
+		setupAuth     func(t *testing.T, request *http.Request, tokenMaker token.Maker)
+		buildStubs    func(store *mockdb.MockStore)
+		checkResponse func(t *testing.T, recorder *httptest.ResponseRecorder)
 	}{
 		{
-			name: "OK",
-			url:  "/categories?user_id=" + userID.String(),
-			setupMock: func(store *mockdb.MockStore) {
-				categories := []db.Category{
-					{
-						ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
-						UserID:    pgtype.UUID{Bytes: userID, Valid: true},
-						Name:      "Income Category",
-						Type:      "income",
-						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-						UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-					},
-					{
-						ID:        pgtype.UUID{Bytes: uuid.New(), Valid: true},
-						UserID:    pgtype.UUID{Bytes: userID, Valid: true},
-						Name:      "Expense Category",
-						Type:      "expense",
-						CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-						UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-					},
-				}
-
-				store.EXPECT().
-					ListCategories(gomock.Any(), pgtype.UUID{Bytes: userID, Valid: true}).
-					Return(categories, nil)
+			name:       "OK",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(category, nil)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
-
-				var responseCategories []db.Category
-				err := json.Unmarshal(recorder.Body.Bytes(), &responseCategories)
-				require.NoError(t, err)
-				require.Len(t, responseCategories, 2)
-				require.Equal(t, "Income Category", responseCategories[0].Name)
-				require.Equal(t, "Expense Category", responseCategories[1].Name)
+				requireBodyMatchCategory(t, recorder.Body, category)
 			},
 		},
 		{
-			name: "InvalidUserID",
-			url:  "/categories?user_id=invalid-uuid",
-			setupMock: func(store *mockdb.MockStore) {
+			name:       "NoAuthorization",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+			},
+			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
-					ListCategories(gomock.Any(), gomock.Any()).
+					GetCategory(gomock.Any(), gomock.Any()).
 					Times(0)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusUnauthorized, recorder.Code)
+			},
+		},
+		{
+			name:       "InvalidID",
+			categoryID: "invalid-uuid",
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusBadRequest, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "uuid")
 			},
 		},
 		{
-			name: "StoreError",
-			url:  "/categories?user_id=" + userID.String(),
-			setupMock: func(store *mockdb.MockStore) {
-				store.EXPECT().
-					ListCategories(gomock.Any(), pgtype.UUID{Bytes: userID, Valid: true}).
-					Return([]db.Category{}, errors.New("database error"))
+			name:       "NotFound",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(db.Category{}, sql.ErrNoRows)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusNotFound, recorder.Code)
+			},
+		},
+		{
+			name:       "Forbidden",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				otherUser := randomUser()
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(otherUser.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(category, nil)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusForbidden, recorder.Code)
+			},
+		},
+		{
+			name:       "InternalError",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(db.Category{}, sql.ErrConnDone)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "database error")
-			},
-		},
-		{
-			name: "EmptyResult",
-			url:  "/categories?user_id=" + userID.String(),
-			setupMock: func(store *mockdb.MockStore) {
-				store.EXPECT().
-					ListCategories(gomock.Any(), pgtype.UUID{Bytes: userID, Valid: true}).
-					Return([]db.Category{}, nil)
-			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusOK, recorder.Code)
-
-				var responseCategories []db.Category
-				err := json.Unmarshal(recorder.Body.Bytes(), &responseCategories)
-				require.NoError(t, err)
-				require.Len(t, responseCategories, 0)
 			},
 		},
 	}
 
 	for i := range testCases {
 		tc := testCases[i]
+
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
 			store := mockdb.NewMockStore(ctrl)
-			tc.setupMock(store)
+			tc.buildStubs(store)
 
-			server := &Server{
-				Store:  store,
-				Router: gin.Default(),
-			}
-			server.setupRoutes()
+			server := newTestServer(t, store)
+			recorder := httptest.NewRecorder()
 
-			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
-			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/categories/%s", tc.categoryID)
+			request, err := http.NewRequest(http.MethodGet, url, nil)
+			require.NoError(t, err)
 
-			server.Router.ServeHTTP(w, req)
-			tc.checkResponse(w)
+			tc.setupAuth(t, request, server.tokenMaker)
+			server.router.ServeHTTP(recorder, request)
+			tc.checkResponse(t, recorder)
 		})
 	}
 }
 
 func TestUpdateCategoryAPI(t *testing.T) {
+	user := randomUser()
+	category := randomCategory(user.ID)
+	updatedCategory := category
+	updatedCategory.Name = util.RandomString(6)
+	updatedCategory.IconUrl = pgtype.Text{String: util.RandomString(10), Valid: true}
+
 	testCases := []struct {
 		name          string
-		body          string
-		setupMock     func(store *mockdb.MockStore)
-		checkResponse func(recorder *httptest.ResponseRecorder)
+		categoryID    string
+		body          gin.H
+		setupAuth     func(t *testing.T, request *http.Request, tokenMaker token.Maker)
+		buildStubs    func(store *mockdb.MockStore)
+		checkResponse func(t *testing.T, recorder *httptest.ResponseRecorder)
 	}{
 		{
-			name: "OK",
-			body: fmt.Sprintf(`{
-				"id": "%s",
-				"name": "Updated Category Name",
-				"type": "expense",
-				"user_id": "%s"
-			}`, categoryID.String(), userID.String()),
-			setupMock: func(store *mockdb.MockStore) {
-				arg := db.UpdateCategoryParams{
-					ID:     pgtype.UUID{Bytes: categoryID, Valid: true},
-					Name:   "Updated Category Name",
-					Type:   "expense",
-					UserID: pgtype.UUID{Bytes: userID, Valid: true},
-				}
-				updatedCategory := db.Category{
-					ID:        pgtype.UUID{Bytes: categoryID, Valid: true},
-					UserID:    pgtype.UUID{Bytes: userID, Valid: true},
-					Name:      "Updated Category Name",
-					Type:      "expense",
-					UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-				}
-				store.EXPECT().
-					UpdateCategory(gomock.Any(), gomock.Eq(arg)).
-					Return(updatedCategory, nil)
+			name:       "OK",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			body: gin.H{
+				"name":     updatedCategory.Name,
+				"icon_url": updatedCategory.IconUrl.String,
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusOK, recorder.Code)
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(category, nil)
 
-				var responseCategory db.Category
-				err := json.Unmarshal(recorder.Body.Bytes(), &responseCategory)
-				require.NoError(t, err)
-				require.Equal(t, "Updated Category Name", responseCategory.Name)
-				require.Equal(t, "expense", responseCategory.Type)
-			},
-		},
-		{
-			name: "InvalidCategoryID",
-			body: fmt.Sprintf(`{
-				"id": "invalid-uuid",
-				"name": "Updated Name",
-				"type": "income",
-				"user_id": "%s"
-			}`, userID.String()),
-			setupMock: func(store *mockdb.MockStore) {
+				expectedArg := db.UpdateCategoryParams{
+					ID:      category.ID,
+					Name:    updatedCategory.Name,
+					IconUrl: updatedCategory.IconUrl,
+					UserID:  user.ID,
+				}
 				store.EXPECT().
 					UpdateCategory(gomock.Any(), gomock.Any()).
-					Times(0)
-			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "uuid")
-			},
-		},
-		{
-			name: "InvalidUserID",
-			body: fmt.Sprintf(`{
-				"id": "%s",
-				"name": "Updated Name",
-				"type": "income",
-				"user_id": "invalid-uuid"
-			}`, categoryID.String()),
-			setupMock: func(store *mockdb.MockStore) {
-				store.EXPECT().
-					UpdateCategory(gomock.Any(), gomock.Any()).
-					Times(0)
-			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "uuid")
-			},
-		},
-		{
-			name: "MissingName",
-			body: fmt.Sprintf(`{
-				"id": "%s",
-				"type": "income",
-				"user_id": "%s"
-			}`, categoryID.String(), userID.String()),
-			setupMock: func(store *mockdb.MockStore) {
-				store.EXPECT().
-					UpdateCategory(gomock.Any(), gomock.Any()).
-					Times(0)
-			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "required")
-			},
-		},
-		{
-			name: "InvalidType",
-			body: fmt.Sprintf(`{
-				"id": "%s",
-				"name": "Updated Name",
-				"type": "invalid",
-				"user_id": "%s"
-			}`, categoryID.String(), userID.String()),
-			setupMock: func(store *mockdb.MockStore) {
-				store.EXPECT().
-					UpdateCategory(gomock.Any(), gomock.Any()).
-					Times(0)
-			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "oneof")
-			},
-		},
-		{
-			name: "EmptyBody",
-			body: `{}`,
-			setupMock: func(store *mockdb.MockStore) {
-				store.EXPECT().
-					UpdateCategory(gomock.Any(), gomock.Any()).
-					Times(0)
-			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "required")
-			},
-		},
-		{
-			name: "StoreError",
-			body: fmt.Sprintf(`{
-				"id": "%s",
-				"name": "Updated Category Name",
-				"type": "expense",
-				"user_id": "%s"
-			}`, categoryID.String(), userID.String()),
-			setupMock: func(store *mockdb.MockStore) {
-				store.EXPECT().
-					UpdateCategory(gomock.Any(), gomock.Any()).
-					Return(db.Category{}, errors.New("database error")).
+					DoAndReturn(func(ctx context.Context, arg db.UpdateCategoryParams) (db.Category, error) {
+						require.Equal(t, expectedArg.ID, arg.ID)
+						require.Equal(t, expectedArg.Name, arg.Name)
+						require.Equal(t, expectedArg.IconUrl, arg.IconUrl)
+						require.Equal(t, expectedArg.UserID, arg.UserID)
+						return updatedCategory, nil
+					}).
 					Times(1)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusOK, recorder.Code)
+				requireBodyMatchCategory(t, recorder.Body, updatedCategory)
+			},
+		},
+		{
+			name:       "NoAuthorization",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			body: gin.H{
+				"name":     updatedCategory.Name,
+				"icon_url": updatedCategory.IconUrl.String,
+			},
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					UpdateCategory(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusUnauthorized, recorder.Code)
+			},
+		},
+		{
+			name:       "InvalidID",
+			categoryID: "invalid-uuid",
+			body: gin.H{
+				"name":     updatedCategory.Name,
+				"icon_url": updatedCategory.IconUrl.String,
+			},
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					UpdateCategory(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			name:       "MissingName",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			body: gin.H{
+				"icon_url": updatedCategory.IconUrl.String,
+			},
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+
+				userIDForAuth := util.PgxUUIDToGoogleUUID(user.ID)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					UpdateCategory(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			name:       "NotFound",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			body: gin.H{
+				"name":     updatedCategory.Name,
+				"icon_url": updatedCategory.IconUrl.String,
+			},
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(db.Category{}, sql.ErrNoRows)
+
+				store.EXPECT().
+					UpdateCategory(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusNotFound, recorder.Code)
+			},
+		},
+		{
+			name:       "Forbidden",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			body: gin.H{
+				"name":     updatedCategory.Name,
+				"icon_url": updatedCategory.IconUrl.String,
+			},
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				otherUser := randomUser()
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(otherUser.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(category, nil)
+
+				store.EXPECT().
+					UpdateCategory(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusForbidden, recorder.Code)
+			},
+		},
+		{
+			name:       "InternalError",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			body: gin.H{
+				"name":     updatedCategory.Name,
+				"icon_url": updatedCategory.IconUrl.String,
+			},
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(category, nil)
+
+				store.EXPECT().
+					UpdateCategory(gomock.Any(), gomock.Any()).
+					Times(1).
+					Return(db.Category{}, sql.ErrConnDone)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "database error")
 			},
 		},
 	}
 
 	for i := range testCases {
 		tc := testCases[i]
+
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
 			store := mockdb.NewMockStore(ctrl)
-			tc.setupMock(store)
+			tc.buildStubs(store)
 
-			server := &Server{
-				Store:  store,
-				Router: gin.Default(),
-			}
-			server.setupRoutes()
+			server := newTestServer(t, store)
+			recorder := httptest.NewRecorder()
 
-			req := httptest.NewRequest(http.MethodPut, "/categories", bytes.NewBufferString(tc.body))
-			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
+			data, err := json.Marshal(tc.body)
+			require.NoError(t, err)
 
-			server.Router.ServeHTTP(w, req)
-			tc.checkResponse(w)
+			url := fmt.Sprintf("/categories/%s", tc.categoryID)
+			request, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(data))
+			require.NoError(t, err)
+
+			tc.setupAuth(t, request, server.tokenMaker)
+			server.router.ServeHTTP(recorder, request)
+			tc.checkResponse(t, recorder)
 		})
 	}
 }
 
 func TestDeleteCategoryAPI(t *testing.T) {
+	user := randomUser()
+	category := randomCategory(user.ID)
+
 	testCases := []struct {
 		name          string
-		url           string
-		setupMock     func(store *mockdb.MockStore)
-		checkResponse func(recorder *httptest.ResponseRecorder)
+		categoryID    string
+		setupAuth     func(t *testing.T, request *http.Request, tokenMaker token.Maker)
+		buildStubs    func(store *mockdb.MockStore)
+		checkResponse func(t *testing.T, recorder *httptest.ResponseRecorder)
 	}{
 		{
-			name: "OK",
-			url:  "/categories/" + categoryID.String() + "?user_id=" + userID.String(),
-			setupMock: func(store *mockdb.MockStore) {
-				arg := db.DeleteCategoryParams{
-					ID:     pgtype.UUID{Bytes: categoryID, Valid: true},
-					UserID: pgtype.UUID{Bytes: userID, Valid: true},
+			name:       "OK",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(category, nil)
+
+				expectedArg := db.DeleteCategoryParams{
+					ID:     category.ID,
+					UserID: user.ID,
 				}
 				store.EXPECT().
-					DeleteCategory(gomock.Any(), gomock.Eq(arg)).
-					Return(nil)
+					DeleteCategory(gomock.Any(), gomock.Any()).
+					DoAndReturn(func(ctx context.Context, arg db.DeleteCategoryParams) error {
+						require.Equal(t, expectedArg.ID, arg.ID)
+						require.Equal(t, expectedArg.UserID, arg.UserID)
+						return nil
+					}).
+					Times(1)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
 
-				var response map[string]interface{}
+				var response map[string]string
 				err := json.Unmarshal(recorder.Body.Bytes(), &response)
 				require.NoError(t, err)
+				require.Equal(t, "category deleted successfully", response["message"])
+			},
+		},
+		{
+			name:       "NoAuthorization",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					DeleteCategory(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusUnauthorized, recorder.Code)
+			},
+		},
+		{
+			name:       "InvalidID",
+			categoryID: "invalid-uuid",
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					DeleteCategory(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			name:       "NotFound",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(db.Category{}, sql.ErrNoRows)
 
-				message, exists := response["message"]
-				require.True(t, exists)
-				require.Equal(t, "category deleted successfully", message)
-			},
-		},
-		{
-			name: "InvalidURI",
-			url:  "/categories/invalid-uuid?user_id=" + userID.String(),
-			setupMock: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					DeleteCategory(gomock.Any(), gomock.Any()).
 					Times(0)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "uuid")
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusNotFound, recorder.Code)
 			},
 		},
 		{
-			name: "InvalidQuery",
-			url:  "/categories/" + categoryID.String() + "?user_id=invalid-uuid",
-			setupMock: func(store *mockdb.MockStore) {
+			name:       "Forbidden",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				otherUser := randomUser()
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(otherUser.ID), time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(category, nil)
+
 				store.EXPECT().
 					DeleteCategory(gomock.Any(), gomock.Any()).
 					Times(0)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "uuid")
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusForbidden, recorder.Code)
 			},
 		},
 		{
-			name: "StoreError",
-			url:  "/categories/" + categoryID.String() + "?user_id=" + userID.String(),
-			setupMock: func(store *mockdb.MockStore) {
-				arg := db.DeleteCategoryParams{
-					ID:     pgtype.UUID{Bytes: categoryID, Valid: true},
-					UserID: pgtype.UUID{Bytes: userID, Valid: true},
-				}
-				store.EXPECT().
-					DeleteCategory(gomock.Any(), gomock.Eq(arg)).
-					Return(errors.New("database error"))
+			name:       "InternalError",
+			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
 			},
-			checkResponse: func(recorder *httptest.ResponseRecorder) {
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategory(gomock.Any(), category.ID).
+					Times(1).
+					Return(category, nil)
+
+				store.EXPECT().
+					DeleteCategory(gomock.Any(), gomock.Any()).
+					Times(1).
+					Return(sql.ErrConnDone)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
-				require.Contains(t, recorder.Body.String(), "database error")
 			},
 		},
 	}
 
 	for i := range testCases {
 		tc := testCases[i]
+
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
 			store := mockdb.NewMockStore(ctrl)
-			tc.setupMock(store)
+			tc.buildStubs(store)
 
-			server := &Server{
-				Store:  store,
-				Router: gin.Default(),
-			}
-			server.setupRoutes()
+			server := newTestServer(t, store)
+			recorder := httptest.NewRecorder()
 
-			req := httptest.NewRequest(http.MethodDelete, tc.url, nil)
-			w := httptest.NewRecorder()
+			url := fmt.Sprintf("/categories/%s", tc.categoryID)
+			request, err := http.NewRequest(http.MethodDelete, url, nil)
+			require.NoError(t, err)
 
-			server.Router.ServeHTTP(w, req)
-			tc.checkResponse(w)
+			tc.setupAuth(t, request, server.tokenMaker)
+			server.router.ServeHTTP(recorder, request)
+			tc.checkResponse(t, recorder)
 		})
+	}
+}
+
+func requireBodyMatchCategory(t *testing.T, body *bytes.Buffer, category db.Category) {
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+
+	var gotCategory categoryResponse
+	err = json.Unmarshal(data, &gotCategory)
+	require.NoError(t, err)
+
+	expectedID := util.PgxUUIDToGoogleUUID(category.ID)
+	expectedUserID := util.PgxUUIDToGoogleUUID(category.UserID)
+
+	require.Equal(t, expectedID, gotCategory.ID)
+	require.Equal(t, expectedUserID.String(), gotCategory.UserID)
+	require.Equal(t, category.Name, gotCategory.Name)
+	require.Equal(t, category.IconUrl.String, gotCategory.IconURL)
+
+}
+
+func requireBodyMatchCategories(t *testing.T, body *bytes.Buffer, categories []db.Category) {
+	data, err := io.ReadAll(body)
+	require.NoError(t, err)
+
+	var gotCategories []categoryResponse
+	err = json.Unmarshal(data, &gotCategories)
+	require.NoError(t, err)
+
+	require.Equal(t, len(categories), len(gotCategories))
+
+	for i := 0; i < len(categories); i++ {
+
+		expectedID := util.PgxUUIDToGoogleUUID(categories[i].ID)
+		expectedUserID := util.PgxUUIDToGoogleUUID(categories[i].UserID)
+
+		require.Equal(t, expectedID, gotCategories[i].ID)
+		require.Equal(t, expectedUserID.String(), gotCategories[i].UserID)
+		require.Equal(t, categories[i].Name, gotCategories[i].Name)
+		require.Equal(t, categories[i].IconUrl.String, gotCategories[i].IconURL)
+
+	}
+}
+
+func randomCategory(userID pgtype.UUID) db.Category {
+	return db.Category{
+		ID:        util.GoogleUUIDToPgxUUID(uuid.New()),
+		UserID:    userID,
+		Name:      util.RandomString(6),
+		IconUrl:   pgtype.Text{String: util.RandomString(10), Valid: true},
+		CreatedAt: pgtype.Timestamptz{Time: time.Now()},
+		UpdatedAt: pgtype.Timestamptz{Time: time.Now()},
 	}
 }

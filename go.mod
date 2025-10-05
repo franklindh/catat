@@ -14,9 +14,13 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.42.0
+	golang.org/x/oauth2 v0.31.0
 )
 
 require (
+	aidanwoods.dev/go-paseto v1.5.4 // indirect
+	aidanwoods.dev/go-result v0.3.1 // indirect
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da // indirect
 	github.com/aead/poly1305 v0.0.0-20180717145839-3fee0db0b635 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect

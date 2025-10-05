@@ -12,37 +12,37 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (
-  email, 
-  name,
-  password
-) VALUES (
-  $1, $2, $3
-)
-RETURNING id, email, name, created_at
+INSERT INTO users (google_id, email, name, balance, avatar_url)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, google_id, email, name, balance, avatar_url, created_at, updated_at
 `
 
 type CreateUserParams struct {
-	Email    string `json:"email"`
-	Name     string `json:"name"`
-	Password string `json:"password"`
+	GoogleID  string         `json:"google_id"`
+	Email     string         `json:"email"`
+	Name      pgtype.Text    `json:"name"`
+	Balance   pgtype.Numeric `json:"balance"`
+	AvatarUrl pgtype.Text    `json:"avatar_url"`
 }
 
-type CreateUserRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Email     string             `json:"email"`
-	Name      string             `json:"name"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.Name, arg.Password)
-	var i CreateUserRow
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, createUser,
+		arg.GoogleID,
+		arg.Email,
+		arg.Name,
+		arg.Balance,
+		arg.AvatarUrl,
+	)
+	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.GoogleID,
 		&i.Email,
 		&i.Name,
+		&i.Balance,
+		&i.AvatarUrl,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -57,146 +57,101 @@ func (q *Queries) DeleteUser(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
-const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, created_at, updated_at FROM users
-WHERE email = $1
+const getUser = `-- name: GetUser :one
+SELECT id, google_id, email, name, balance, avatar_url, created_at, updated_at
+FROM users
+WHERE id = $1 LIMIT 1
 `
 
-type GetUserByEmailRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Email     string             `json:"email"`
-	Name      string             `json:"name"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error) {
-	row := q.db.QueryRow(ctx, getUserByEmail, email)
-	var i GetUserByEmailRow
+func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, getUser, id)
+	var i User
 	err := row.Scan(
 		&i.ID,
+		&i.GoogleID,
 		&i.Email,
 		&i.Name,
+		&i.Balance,
+		&i.AvatarUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, name, created_at, updated_at FROM users
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, google_id, email, name, balance, avatar_url, created_at, updated_at
+FROM users
+WHERE email = $1 LIMIT 1
+`
+
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.GoogleID,
+		&i.Email,
+		&i.Name,
+		&i.Balance,
+		&i.AvatarUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserByGoogleID = `-- name: GetUserByGoogleID :one
+SELECT id, google_id, email, name, balance, avatar_url, created_at, updated_at
+FROM users
+WHERE google_id = $1 LIMIT 1
+`
+
+func (q *Queries) GetUserByGoogleID(ctx context.Context, googleID string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByGoogleID, googleID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.GoogleID,
+		&i.Email,
+		&i.Name,
+		&i.Balance,
+		&i.AvatarUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUser = `-- name: UpdateUser :exec
+UPDATE users
+SET name = $2, avatar_url = $3, updated_at = NOW()
 WHERE id = $1
 `
 
-type GetUserByIDRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Email     string             `json:"email"`
-	Name      string             `json:"name"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error) {
-	row := q.db.QueryRow(ctx, getUserByID, id)
-	var i GetUserByIDRow
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Name,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const listUsers = `-- name: ListUsers :many
-SELECT id, email, name, created_at, updated_at FROM users
-ORDER BY id
-LIMIT $1 OFFSET $2
-`
-
-type ListUsersParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
-}
-
-type ListUsersRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Email     string             `json:"email"`
-	Name      string             `json:"name"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
-	rows, err := q.db.Query(ctx, listUsers, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListUsersRow{}
-	for rows.Next() {
-		var i ListUsersRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Email,
-			&i.Name,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const updateUser = `-- name: UpdateUser :one
-UPDATE users
-SET
-  email = COALESCE($1, email),
-  name = COALESCE($2, name),
-  password = COALESCE($3, password),
-  password_changed_at = COALESCE($4, password_changed_at),
-  updated_at = now()
-WHERE id = $5
-RETURNING id, email, name, created_at, updated_at
-`
-
 type UpdateUserParams struct {
-	Email             pgtype.Text        `json:"email"`
-	Name              pgtype.Text        `json:"name"`
-	Password          pgtype.Text        `json:"password"`
-	PasswordChangedAt pgtype.Timestamptz `json:"password_changed_at"`
-	ID                pgtype.UUID        `json:"id"`
+	ID        pgtype.UUID `json:"id"`
+	Name      pgtype.Text `json:"name"`
+	AvatarUrl pgtype.Text `json:"avatar_url"`
 }
 
-type UpdateUserRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Email     string             `json:"email"`
-	Name      string             `json:"name"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
+	_, err := q.db.Exec(ctx, updateUser, arg.ID, arg.Name, arg.AvatarUrl)
+	return err
 }
 
-func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error) {
-	row := q.db.QueryRow(ctx, updateUser,
-		arg.Email,
-		arg.Name,
-		arg.Password,
-		arg.PasswordChangedAt,
-		arg.ID,
-	)
-	var i UpdateUserRow
-	err := row.Scan(
-		&i.ID,
-		&i.Email,
-		&i.Name,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+const updateUserBalance = `-- name: UpdateUserBalance :exec
+UPDATE users
+SET balance = $2, updated_at = NOW()
+WHERE id = $1
+`
+
+type UpdateUserBalanceParams struct {
+	ID      pgtype.UUID    `json:"id"`
+	Balance pgtype.Numeric `json:"balance"`
+}
+
+func (q *Queries) UpdateUserBalance(ctx context.Context, arg UpdateUserBalanceParams) error {
+	_, err := q.db.Exec(ctx, updateUserBalance, arg.ID, arg.Balance)
+	return err
 }

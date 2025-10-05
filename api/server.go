@@ -1,7 +1,9 @@
+// api/server.go
 package api
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,22 +12,25 @@ import (
 	"time"
 
 	db "github.com/franklindh/catat/db/sqlc"
+	"github.com/franklindh/catat/token"
+	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
 
 type Server struct {
-	Store  db.Store
-	Router *gin.Engine
+	config     util.Config
+	store      db.Store
+	tokenMaker token.Maker
+	router     *gin.Engine
 }
 
-func NewServer(dbPool *pgxpool.Pool) *Server {
+func NewServer(config util.Config, store db.Store) (*Server, error) {
 	if err := godotenv.Load(); err != nil {
 		log.Println("Warning: Error loading .env file")
 	}
 
-	gin.SetMode(gin.ReleaseMode)
+	gin.SetMode(gin.DebugMode)
 	if os.Getenv("GIN_MODE") == "debug" {
 		gin.SetMode(gin.DebugMode)
 	}
@@ -34,68 +39,73 @@ func NewServer(dbPool *pgxpool.Pool) *Server {
 	Router.Use(gin.Logger())
 	Router.Use(gin.Recovery())
 
-	Store := db.NewStore(dbPool)
+	tokenMaker, err := token.NewJWTMaker(config.TokenSymmetricKey)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create token maker: %w", err)
+	}
 
 	server := &Server{
-		Store:  Store,
-		Router: Router,
+		config:     config,
+		store:      store,
+		tokenMaker: tokenMaker,
+		router:     Router,
 	}
 
 	server.setupRoutes()
-	return server
+	return server, nil
 }
 
 func (s *Server) setupRoutes() {
-	s.Router.GET("/health", func(c *gin.Context) {
+	// Public routes
+	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
 			"message": "Catat API is running",
 		})
 	})
 
-	s.Router.GET("/", func(c *gin.Context) {
+	s.router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Welcome to Catat API",
 			"version": "1.0.0",
 		})
 	})
 
-	s.Router.POST("/accounts", s.createAccount)
-	s.Router.GET("/accounts/:id", s.getAccount)
-	s.Router.GET("/accounts", s.listAccounts)
-	s.Router.PUT("/accounts", s.updateAccount)
-	s.Router.DELETE("/accounts/:id", s.deleteAccount)
+	// User registration/login routes
+	s.router.GET("/users/google/login", s.googleOAuthLogin)
+	s.router.GET("/users/google/callback", s.googleOAuthCallback)
+	s.router.POST("/users/google/callback", s.googleOAuthCallback)
 
-	s.Router.POST("/users", s.createUser)
-	s.Router.GET("/users/:id", s.getUserByID)
-	s.Router.GET("/users", s.getUserByEmail)
-	s.Router.GET("/users/list", s.listUsers)
-	s.Router.PATCH("/users", s.updateUser)
-	s.Router.DELETE("/users/:id", s.deleteUser)
+	// Public user routes
+	s.router.GET("/users/:id", s.getUser)
 
-	s.Router.POST("/categories", s.createCategory)
-	s.Router.GET("/categories/:id", s.getCategory)
-	s.Router.GET("/categories", s.listCategories)
-	s.Router.PUT("/categories", s.updateCategory)
-	s.Router.DELETE("/categories/:id", s.deleteCategory)
+	// Protected routes - need authentication
+	authRoutes := s.router.Group("/").Use(authMiddleware(s.tokenMaker))
+	{
+		authRoutes.POST("/categories", s.createCategory)
+		authRoutes.GET("/categories", s.getCategory)
+		authRoutes.GET("/categories/:id", s.getCategoryByID)
+		authRoutes.PUT("/categories/:id", s.updateCategory)
+		authRoutes.DELETE("/categories/:id", s.deleteCategory)
 
-	s.Router.POST("/transactions", s.createTransaction)
-	s.Router.GET("/transactions/:id", s.getTransaction)
-	s.Router.GET("/transactions", s.listTransactions)
-	s.Router.GET("/transactions/account", s.listTransactionsByAccount)
-	s.Router.GET("/transactions/date-range", s.listTransactionsByDateRange)
-	s.Router.PUT("/transactions", s.updateTransaction)
-	s.Router.DELETE("/transactions/:id", s.deleteTransaction)
+		// Transaction routes
+		authRoutes.POST("/transactions", s.createTransaction)
+		authRoutes.GET("/transaction", s.getTransaction)
 
-	s.Router.POST("/receipts", s.createReceipt)
-	s.Router.GET("/receipts/transaction/:transaction_id", s.getReceiptByTransactionID)
-	s.Router.DELETE("/receipts/:id", s.deleteReceipt)
+		authRoutes.PUT("/transactions/:id", s.updateTransaction)
+		authRoutes.DELETE("/transactions/:id", s.deleteTransaction)
+
+		// Protected user routes
+		authRoutes.GET("/user", s.getUser)
+		authRoutes.PUT("/user", s.updateUser)
+		authRoutes.DELETE("/user", s.deleteUser)
+	}
 }
 
 func (s *Server) Start(address string) error {
 	server := &http.Server{
 		Addr:    address,
-		Handler: s.Router,
+		Handler: s.router,
 	}
 
 	quit := make(chan os.Signal, 1)
@@ -126,5 +136,5 @@ func (s *Server) Start(address string) error {
 }
 
 func (s *Server) GetStore() db.Store {
-	return s.Store
+	return s.store
 }

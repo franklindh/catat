@@ -8,54 +8,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type Account struct {
-	ID     pgtype.UUID `json:"id"`
-	UserID pgtype.UUID `json:"user_id"`
-	Name   string      `json:"name"`
-	// Contoh: "depository", "credit", "cash"
-	Type      string             `json:"type"`
-	Balance   pgtype.Numeric     `json:"balance"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
 type Category struct {
-	ID     pgtype.UUID `json:"id"`
-	UserID pgtype.UUID `json:"user_id"`
-	Name   string      `json:"name"`
-	// "income" atau "expense"
-	Type      string             `json:"type"`
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Name      string             `json:"name"`
+	IconUrl   pgtype.Text        `json:"icon_url"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-type Receipt struct {
-	ID            pgtype.UUID `json:"id"`
-	TransactionID pgtype.UUID `json:"transaction_id"`
-	// Path ke file gambar di storage (lokal atau cloud)
-	ImageUrl  string             `json:"image_url"`
-	RawText   pgtype.Text        `json:"raw_text"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type Transaction struct {
-	ID         pgtype.UUID `json:"id"`
-	UserID     pgtype.UUID `json:"user_id"`
-	AccountID  pgtype.UUID `json:"account_id"`
-	CategoryID pgtype.UUID `json:"category_id"`
-	// Positif untuk pendapatan, negatif untuk pengeluaran
+	ID              pgtype.UUID        `json:"id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	CategoryID      pgtype.UUID        `json:"category_id"`
 	Amount          pgtype.Numeric     `json:"amount"`
-	Description     string             `json:"description"`
+	Description     pgtype.Text        `json:"description"`
 	TransactionDate pgtype.Timestamptz `json:"transaction_date"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 type User struct {
-	ID                pgtype.UUID        `json:"id"`
-	Email             string             `json:"email"`
-	Name              string             `json:"name"`
-	Password          string             `json:"password"`
-	PasswordChangedAt pgtype.Timestamptz `json:"password_changed_at"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ID        pgtype.UUID        `json:"id"`
+	GoogleID  string             `json:"google_id"`
+	Email     string             `json:"email"`
+	Name      pgtype.Text        `json:"name"`
+	Balance   pgtype.Numeric     `json:"balance"`
+	AvatarUrl pgtype.Text        `json:"avatar_url"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }

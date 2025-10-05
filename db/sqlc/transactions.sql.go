@@ -12,32 +12,22 @@ import (
 )
 
 const createTransaction = `-- name: CreateTransaction :one
-INSERT INTO "transactions" (
-  user_id,
-  account_id,
-  category_id,
-  amount,
-  description,
-  transaction_date
-) VALUES (
-  $1, $2, $3, $4, $5, $6
-)
-RETURNING id, user_id, account_id, category_id, amount, description, transaction_date, created_at
+INSERT INTO transactions (user_id, category_id, amount, description, transaction_date)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, user_id, category_id, amount, description, transaction_date, created_at
 `
 
 type CreateTransactionParams struct {
 	UserID          pgtype.UUID        `json:"user_id"`
-	AccountID       pgtype.UUID        `json:"account_id"`
 	CategoryID      pgtype.UUID        `json:"category_id"`
 	Amount          pgtype.Numeric     `json:"amount"`
-	Description     string             `json:"description"`
+	Description     pgtype.Text        `json:"description"`
 	TransactionDate pgtype.Timestamptz `json:"transaction_date"`
 }
 
 func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error) {
 	row := q.db.QueryRow(ctx, createTransaction,
 		arg.UserID,
-		arg.AccountID,
 		arg.CategoryID,
 		arg.Amount,
 		arg.Description,
@@ -47,7 +37,6 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
-		&i.AccountID,
 		&i.CategoryID,
 		&i.Amount,
 		&i.Description,
@@ -58,7 +47,7 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 }
 
 const deleteTransaction = `-- name: DeleteTransaction :exec
-DELETE FROM "transactions"
+DELETE FROM transactions
 WHERE id = $1 AND user_id = $2
 `
 
@@ -73,22 +62,17 @@ func (q *Queries) DeleteTransaction(ctx context.Context, arg DeleteTransactionPa
 }
 
 const getTransaction = `-- name: GetTransaction :one
-SELECT id, user_id, account_id, category_id, amount, description, transaction_date, created_at FROM "transactions"
-WHERE id = $1 AND user_id = $2
+SELECT id, user_id, category_id, amount, description, transaction_date, created_at
+FROM transactions
+WHERE id = $1 LIMIT 1
 `
 
-type GetTransactionParams struct {
-	ID     pgtype.UUID `json:"id"`
-	UserID pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GetTransaction(ctx context.Context, arg GetTransactionParams) (Transaction, error) {
-	row := q.db.QueryRow(ctx, getTransaction, arg.ID, arg.UserID)
+func (q *Queries) GetTransaction(ctx context.Context, id pgtype.UUID) (Transaction, error) {
+	row := q.db.QueryRow(ctx, getTransaction, id)
 	var i Transaction
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
-		&i.AccountID,
 		&i.CategoryID,
 		&i.Amount,
 		&i.Description,
@@ -98,22 +82,23 @@ func (q *Queries) GetTransaction(ctx context.Context, arg GetTransactionParams) 
 	return i, err
 }
 
-const listTransactions = `-- name: ListTransactions :many
-SELECT id, user_id, account_id, category_id, amount, description, transaction_date, created_at FROM "transactions"
+const getTransactions = `-- name: GetTransactions :many
+SELECT id, user_id, category_id, amount, description, transaction_date, created_at
+FROM transactions
 WHERE user_id = $1
 ORDER BY transaction_date DESC
-LIMIT $2
+LIMIT $2 
 OFFSET $3
 `
 
-type ListTransactionsParams struct {
+type GetTransactionsParams struct {
 	UserID pgtype.UUID `json:"user_id"`
 	Limit  int32       `json:"limit"`
 	Offset int32       `json:"offset"`
 }
 
-func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsParams) ([]Transaction, error) {
-	rows, err := q.db.Query(ctx, listTransactions, arg.UserID, arg.Limit, arg.Offset)
+func (q *Queries) GetTransactions(ctx context.Context, arg GetTransactionsParams) ([]Transaction, error) {
+	rows, err := q.db.Query(ctx, getTransactions, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +109,6 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
-			&i.AccountID,
 			&i.CategoryID,
 			&i.Amount,
 			&i.Description,
@@ -141,25 +125,28 @@ func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsPara
 	return items, nil
 }
 
-const listTransactionsByAccount = `-- name: ListTransactionsByAccount :many
-SELECT id, user_id, account_id, category_id, amount, description, transaction_date, created_at FROM "transactions"
-WHERE user_id = $1 AND account_id = $2
+const getTransactionsByDateRange = `-- name: GetTransactionsByDateRange :many
+SELECT id, user_id, category_id, amount, description, transaction_date, created_at
+FROM transactions
+WHERE user_id = $1 AND transaction_date >= $2 AND transaction_date <= $3
 ORDER BY transaction_date DESC
-LIMIT $3
-OFFSET $4
+LIMIT $4 
+OFFSET $5
 `
 
-type ListTransactionsByAccountParams struct {
-	UserID    pgtype.UUID `json:"user_id"`
-	AccountID pgtype.UUID `json:"account_id"`
-	Limit     int32       `json:"limit"`
-	Offset    int32       `json:"offset"`
+type GetTransactionsByDateRangeParams struct {
+	UserID            pgtype.UUID        `json:"user_id"`
+	TransactionDate   pgtype.Timestamptz `json:"transaction_date"`
+	TransactionDate_2 pgtype.Timestamptz `json:"transaction_date_2"`
+	Limit             int32              `json:"limit"`
+	Offset            int32              `json:"offset"`
 }
 
-func (q *Queries) ListTransactionsByAccount(ctx context.Context, arg ListTransactionsByAccountParams) ([]Transaction, error) {
-	rows, err := q.db.Query(ctx, listTransactionsByAccount,
+func (q *Queries) GetTransactionsByDateRange(ctx context.Context, arg GetTransactionsByDateRangeParams) ([]Transaction, error) {
+	rows, err := q.db.Query(ctx, getTransactionsByDateRange,
 		arg.UserID,
-		arg.AccountID,
+		arg.TransactionDate,
+		arg.TransactionDate_2,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -173,51 +160,6 @@ func (q *Queries) ListTransactionsByAccount(ctx context.Context, arg ListTransac
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
-			&i.AccountID,
-			&i.CategoryID,
-			&i.Amount,
-			&i.Description,
-			&i.TransactionDate,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listTransactionsByDateRange = `-- name: ListTransactionsByDateRange :many
-SELECT id, user_id, account_id, category_id, amount, description, transaction_date, created_at FROM "transactions"
-WHERE
-  user_id = $1 AND
-  transaction_date >= $2 AND
-  transaction_date <= $3
-ORDER BY transaction_date DESC
-`
-
-type ListTransactionsByDateRangeParams struct {
-	UserID            pgtype.UUID        `json:"user_id"`
-	TransactionDate   pgtype.Timestamptz `json:"transaction_date"`
-	TransactionDate_2 pgtype.Timestamptz `json:"transaction_date_2"`
-}
-
-func (q *Queries) ListTransactionsByDateRange(ctx context.Context, arg ListTransactionsByDateRangeParams) ([]Transaction, error) {
-	rows, err := q.db.Query(ctx, listTransactionsByDateRange, arg.UserID, arg.TransactionDate, arg.TransactionDate_2)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Transaction{}
-	for rows.Next() {
-		var i Transaction
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.AccountID,
 			&i.CategoryID,
 			&i.Amount,
 			&i.Description,
@@ -235,24 +177,21 @@ func (q *Queries) ListTransactionsByDateRange(ctx context.Context, arg ListTrans
 }
 
 const updateTransaction = `-- name: UpdateTransaction :one
-UPDATE "transactions"
-SET
-  account_id = $2,
-  category_id = $3,
-  amount = $4,
-  description = $5,
-  transaction_date = $6
-WHERE
-  id = $1 AND user_id = $7
-RETURNING id, user_id, account_id, category_id, amount, description, transaction_date, created_at
+UPDATE transactions
+SET 
+  category_id = COALESCE($2, category_id), 
+  amount = COALESCE($3, amount), 
+  description = COALESCE($4, description), 
+  transaction_date = COALESCE($5, transaction_date)
+WHERE id = $1 AND user_id = $6
+RETURNING id, user_id, category_id, amount, description, transaction_date, created_at
 `
 
 type UpdateTransactionParams struct {
 	ID              pgtype.UUID        `json:"id"`
-	AccountID       pgtype.UUID        `json:"account_id"`
 	CategoryID      pgtype.UUID        `json:"category_id"`
 	Amount          pgtype.Numeric     `json:"amount"`
-	Description     string             `json:"description"`
+	Description     pgtype.Text        `json:"description"`
 	TransactionDate pgtype.Timestamptz `json:"transaction_date"`
 	UserID          pgtype.UUID        `json:"user_id"`
 }
@@ -260,7 +199,6 @@ type UpdateTransactionParams struct {
 func (q *Queries) UpdateTransaction(ctx context.Context, arg UpdateTransactionParams) (Transaction, error) {
 	row := q.db.QueryRow(ctx, updateTransaction,
 		arg.ID,
-		arg.AccountID,
 		arg.CategoryID,
 		arg.Amount,
 		arg.Description,
@@ -271,7 +209,6 @@ func (q *Queries) UpdateTransaction(ctx context.Context, arg UpdateTransactionPa
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
-		&i.AccountID,
 		&i.CategoryID,
 		&i.Amount,
 		&i.Description,

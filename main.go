@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/franklindh/catat/api"
+	db "github.com/franklindh/catat/db/sqlc"
 	"github.com/franklindh/catat/util"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -28,7 +29,11 @@ func main() {
 
 	log.Println("Database connected successfully")
 
-	server := api.NewServer(conn)
+	store := db.NewStore(conn)
+	server, err := api.NewServer(config, store)
+	if err != nil {
+		log.Fatal("cannot create server:", err)
+	}
 
 	log.Printf("Starting server on %s", config.ServerAddress)
 	if err := server.Start(config.ServerAddress); err != nil {

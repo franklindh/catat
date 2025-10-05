@@ -1,167 +1,77 @@
 package api
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
-	"strings"
 
 	db "github.com/franklindh/catat/db/sqlc"
+	"github.com/franklindh/catat/token"
 	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type createUserRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Name     string `json:"name" binding:"required"`
-	Password string `json:"password" binding:"required,min=6"`
+type userResponse struct {
+	ID        uuid.UUID          `json:"id"`
+	GoogleID  string             `json:"google_id"`
+	Email     string             `json:"email"`
+	Name      string             `json:"name"`
+	Balance   string             `json:"balance"`
+	AvatarUrl string             `json:"avatar_url"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-type getUserRequest struct {
-	ID string `uri:"id" binding:"required,uuid"`
+func newUserResponse(user db.User) userResponse {
+	balanceStr, _ := user.Balance.Value()
+
+	return userResponse{
+		ID:        util.PgxUUIDToGoogleUUID(user.ID),
+		GoogleID:  user.GoogleID,
+		Email:     user.Email,
+		Name:      user.Name.String,
+		Balance:   balanceStr.(string),
+		AvatarUrl: user.AvatarUrl.String,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+	}
 }
 
-type getUserByEmailRequest struct {
-	Email string `form:"email" binding:"required,email"`
-}
-
-type listUsersRequest struct {
-	Page  int `form:"page"`
-	Limit int `form:"limit"`
-}
-
-type updateUserRequest struct {
-	ID    string `json:"id" binding:"required,uuid"`
-	Email string `json:"email,omitempty" binding:"omitempty,email"`
-	Name  string `json:"name,omitempty" binding:"omitempty"`
-}
-
-type deleteUserRequest struct {
-	ID string `uri:"id" binding:"required,uuid"`
-}
-
-func (s *Server) createUser(ctx *gin.Context) {
-	var req createUserRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+func (s *Server) getUser(ctx *gin.Context) {
+	payload, ok := ctx.Get(authorizationPayloadKey)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("authorization payload not found")))
 		return
 	}
 
-	hashedPassword, err := util.HashPassword(req.Password)
+	authPayload, ok := payload.(*token.Payload)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(errors.New("invalid payload type")))
+		return
+	}
+
+	userID := util.GoogleUUIDToPgxUUID(authPayload.UserID)
+
+	user, err := s.store.GetUser(ctx, userID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
-		return
-	}
-
-	arg := db.CreateUserParams{
-		Email:    req.Email,
-		Name:     req.Name,
-		Password: hashedPassword,
-	}
-
-	user, err := s.Store.CreateUser(ctx, arg)
-	if err != nil {
-		if pqErr, ok := err.(*pgconn.PgError); ok {
-			switch pqErr.Code {
-			case "23505":
-				ctx.JSON(http.StatusForbidden, util.ErrorResponse(errors.New("email already exists")))
-				return
-			default:
-				ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(errors.New("database error")))
-				return
-			}
-		}
-		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
-		return
-	}
-
-	ctx.JSON(http.StatusCreated, user)
-}
-
-func (s *Server) getUserByID(ctx *gin.Context) {
-	var req getUserRequest
-	if err := ctx.ShouldBindUri(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
-		return
-	}
-
-	userID, err := util.ParseUUID(req.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid user ID format"))
-		return
-	}
-
-	user, err := s.Store.GetUserByID(ctx, userID)
-	if err != nil {
-		if strings.Contains(err.Error(), "no rows in result set") {
-			ctx.JSON(http.StatusNotFound, util.ErrorResponseWithMessage("user not found"))
+		if errors.Is(err, pgx.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponse(errors.New("user not found")))
 			return
 		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, user)
+	rsp := newUserResponse(user)
+	ctx.JSON(http.StatusOK, rsp)
 }
 
-func (s *Server) getUserByEmail(ctx *gin.Context) {
-	var req getUserByEmailRequest
-	if err := ctx.ShouldBindQuery(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
-		return
-	}
-
-	user, err := s.Store.GetUserByEmail(ctx, req.Email)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
-		return
-	}
-
-	ctx.JSON(http.StatusOK, user)
-}
-
-func (s *Server) listUsers(ctx *gin.Context) {
-	var req listUsersRequest
-	if err := ctx.ShouldBindQuery(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
-		return
-	}
-
-	if req.Page <= 0 {
-		req.Page = 1
-	}
-	if req.Limit <= 0 {
-		req.Limit = 10
-	}
-	if req.Limit > 100 {
-		req.Limit = 100
-	}
-
-	offset := (req.Page - 1) * req.Limit
-
-	users, err := s.Store.ListUsers(ctx, db.ListUsersParams{
-		Limit:  int32(req.Limit),
-		Offset: int32(offset),
-	})
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
-		return
-	}
-
-	total := int64(len(users))
-
-	ctx.JSON(http.StatusOK, gin.H{
-		"data": users,
-		"pagination": gin.H{
-			"page":        req.Page,
-			"limit":       req.Limit,
-			"total":       total,
-			"totalPages":  (int(total) + req.Limit - 1) / req.Limit,
-			"hasNext":     req.Page*req.Limit < int(total),
-			"hasPrevious": req.Page > 1,
-		},
-	})
+type updateUserRequest struct {
+	Name      string `json:"name"`
+	AvatarUrl string `json:"avatar_url" binding:"omitempty,url"`
 }
 
 func (s *Server) updateUser(ctx *gin.Context) {
@@ -171,48 +81,61 @@ func (s *Server) updateUser(ctx *gin.Context) {
 		return
 	}
 
-	userID, err := util.ParseUUID(req.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid user ID format"))
+	payload, ok := ctx.Get(authorizationPayloadKey)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("authorization payload not found")))
 		return
 	}
 
-	arg := db.UpdateUserParams{
-		ID: userID,
-		Email: pgtype.Text{
-			String: req.Email,
-			Valid:  req.Email != "",
-		},
-		Name: pgtype.Text{
-			String: req.Name,
-			Valid:  req.Name != "",
-		},
+	authPayload, ok := payload.(*token.Payload)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(errors.New("invalid payload type")))
+		return
 	}
 
-	user, err := s.Store.UpdateUser(ctx, arg)
+	userID := util.GoogleUUIDToPgxUUID(authPayload.UserID)
+
+	arg := db.UpdateUserParams{
+		ID:        userID,
+		Name:      pgtype.Text{String: req.Name, Valid: req.Name != ""},
+		AvatarUrl: pgtype.Text{String: req.AvatarUrl, Valid: req.AvatarUrl != ""},
+	}
+
+	err := s.store.UpdateUser(ctx, arg)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponse(errors.New("user not found to update")))
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, user)
+	ctx.JSON(http.StatusOK, gin.H{"message": "user updated successfully"})
 }
 
 func (s *Server) deleteUser(ctx *gin.Context) {
-	var req deleteUserRequest
-	if err := ctx.ShouldBindUri(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+	payload, ok := ctx.Get(authorizationPayloadKey)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("authorization payload not found")))
 		return
 	}
 
-	userID, err := util.ParseUUID(req.ID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid user ID format"))
+	authPayload, ok := payload.(*token.Payload)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(errors.New("invalid payload type")))
 		return
 	}
 
-	err = s.Store.DeleteUser(ctx, userID)
+	userID := util.GoogleUUIDToPgxUUID(authPayload.UserID)
+
+	err := s.store.DeleteUser(ctx, userID)
 	if err != nil {
+
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponse(errors.New("user not found")))
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}

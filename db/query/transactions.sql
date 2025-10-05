@@ -1,35 +1,38 @@
 -- name: GetTransaction :one
-SELECT id, user_id, category_id, amount, balance_after, description, transaction_date, created_at
+SELECT id, user_id, category_id, amount, description, transaction_date, created_at
 FROM transactions
 WHERE id = $1 LIMIT 1;
 
--- name: GetTransactionsByUser :many
-SELECT id, user_id, category_id, amount, balance_after, description, transaction_date, created_at
+-- name: GetTransactions :many
+SELECT id, user_id, category_id, amount, description, transaction_date, created_at
 FROM transactions
 WHERE user_id = $1
-ORDER BY transaction_date DESC;
+ORDER BY transaction_date DESC
+LIMIT $2 
+OFFSET $3;
 
--- name: GetTransactionsByUserAndCategory :many
-SELECT id, user_id, category_id, amount, balance_after, description, transaction_date, created_at
-FROM transactions
-WHERE user_id = $1 AND category_id = $2
-ORDER BY transaction_date DESC;
-
--- name: GetTransactionsByUserInDateRange :many
-SELECT id, user_id, category_id, amount, balance_after, description, transaction_date, created_at
+-- name: GetTransactionsByDateRange :many
+SELECT id, user_id, category_id, amount, description, transaction_date, created_at
 FROM transactions
 WHERE user_id = $1 AND transaction_date >= $2 AND transaction_date <= $3
-ORDER BY transaction_date DESC;
+ORDER BY transaction_date DESC
+LIMIT $4 
+OFFSET $5;
 
 -- name: CreateTransaction :one
-INSERT INTO transactions (user_id, category_id, amount, balance_after, description, transaction_date)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, user_id, category_id, amount, balance_after, description, transaction_date, created_at;
+INSERT INTO transactions (user_id, category_id, amount, description, transaction_date)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, user_id, category_id, amount, description, transaction_date, created_at;
 
--- name: UpdateTransaction :exec
+-- name: UpdateTransaction :one
 UPDATE transactions
-SET category_id = $2, amount = $3, balance_after = $4, description = $5, transaction_date = $6
-WHERE id = $1 AND user_id = $7;
+SET 
+  category_id = COALESCE($2, category_id), 
+  amount = COALESCE($3, amount), 
+  description = COALESCE($4, description), 
+  transaction_date = COALESCE($5, transaction_date)
+WHERE id = $1 AND user_id = $6
+RETURNING id, user_id, category_id, amount, description, transaction_date, created_at;
 
 -- name: DeleteTransaction :exec
 DELETE FROM transactions

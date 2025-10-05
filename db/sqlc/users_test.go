@@ -2,183 +2,161 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"testing"
-	"time"
 
 	"github.com/franklindh/catat/util"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func createRandomUser(t *testing.T) User {
-	hashedPassword, err := util.HashPassword(util.GetRandomName().String)
-	require.NoError(t, err)
-
+func createRandomUserForTest(t *testing.T) User {
 	arg := CreateUserParams{
-		Email:    util.GetRandomEmail().String,
-		Name:     util.GetRandomName().String,
-		Password: hashedPassword,
+		GoogleID:  util.RandomString(12),
+		Email:     util.RandomEmail(),
+		Name:      pgtype.Text{String: util.RandomString(6), Valid: true},
+		Balance:   util.RandomBalance(),
+		AvatarUrl: pgtype.Text{String: util.RandomString(20), Valid: true},
 	}
 
-	createUserRow, err := testQueries.CreateUser(context.Background(), arg)
+	user, err := testStore.CreateUser(context.Background(), arg)
 	require.NoError(t, err)
-	require.NotEmpty(t, createUserRow)
+	require.NotEmpty(t, user)
 
-	assert.Equal(t, arg.Email, createUserRow.Email)
-	assert.WithinDuration(t, time.Now(), createUserRow.CreatedAt.Time, 5*time.Second)
+	require.Equal(t, arg.GoogleID, user.GoogleID)
+	require.Equal(t, arg.Email, user.Email)
+	require.Equal(t, arg.Name, user.Name)
+	require.Equal(t, arg.Balance, user.Balance)
+	require.Equal(t, arg.AvatarUrl, user.AvatarUrl)
 
-	user := User{
-		ID:        createUserRow.ID,
-		Email:     createUserRow.Email,
-		Name:      createUserRow.Name,
-		CreatedAt: createUserRow.CreatedAt,
-	}
+	require.NotZero(t, user.ID)
+	require.NotZero(t, user.CreatedAt)
 
 	return user
 }
 
 func TestCreateUser(t *testing.T) {
-	createRandomUser(t)
+	createRandomUserForTest(t)
+}
+
+func TestGetUser(t *testing.T) {
+	user1 := createRandomUserForTest(t)
+
+	user2, err := testStore.GetUser(context.Background(), user1.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, user2)
+
+	require.Equal(t, user1.ID, user2.ID)
+	require.Equal(t, user1.GoogleID, user2.GoogleID)
+	require.Equal(t, user1.Email, user2.Email)
+	require.Equal(t, user1.Name, user2.Name)
+	require.Equal(t, user1.AvatarUrl, user2.AvatarUrl)
+	require.Equal(t, user1.Balance, user2.Balance)
+	require.Equal(t, user1.CreatedAt, user2.CreatedAt)
+	require.Equal(t, user1.UpdatedAt, user2.UpdatedAt)
 }
 
 func TestGetUserByEmail(t *testing.T) {
-	createdUser := createRandomUser(t)
+	user1 := createRandomUserForTest(t)
 
-	user, err := testQueries.GetUserByEmail(context.Background(), createdUser.Email)
+	user2, err := testStore.GetUserByEmail(context.Background(), user1.Email)
 	require.NoError(t, err)
-	require.NotEmpty(t, user)
+	require.NotEmpty(t, user2)
 
-	assert.Equal(t, createdUser.ID, user.ID)
-	assert.Equal(t, createdUser.Email, user.Email)
-
-	assert.WithinDuration(t, createdUser.CreatedAt.Time, user.CreatedAt.Time, time.Second)
+	require.Equal(t, user1.ID, user2.ID)
+	require.Equal(t, user1.GoogleID, user2.GoogleID)
+	require.Equal(t, user1.Email, user2.Email)
+	require.Equal(t, user1.Name, user2.Name)
+	require.Equal(t, user1.Balance, user2.Balance)
+	require.Equal(t, user1.AvatarUrl, user2.AvatarUrl)
+	require.Equal(t, user1.CreatedAt, user2.CreatedAt)
+	require.Equal(t, user1.UpdatedAt, user2.UpdatedAt)
 }
 
-func TestGetUserByID(t *testing.T) {
-	createdUser := createRandomUser(t)
+func TestGetUserByGoogleID(t *testing.T) {
+	user1 := createRandomUserForTest(t)
 
-	user, err := testQueries.GetUserByID(context.Background(), createdUser.ID)
+	user2, err := testStore.GetUserByGoogleID(context.Background(), user1.GoogleID)
 	require.NoError(t, err)
-	require.NotEmpty(t, user)
+	require.NotEmpty(t, user2)
 
-	assert.Equal(t, createdUser.ID, user.ID)
-	assert.Equal(t, createdUser.Email, user.Email)
-
-	assert.WithinDuration(t, createdUser.CreatedAt.Time, user.CreatedAt.Time, time.Second)
-}
-
-func TestGetUserByEmailNotFound(t *testing.T) {
-	_, err := testQueries.GetUserByEmail(context.Background(), "tes@icikiwir.com")
-	assert.Error(t, err)
-}
-
-func TestGetUserByIDNotFound(t *testing.T) {
-	randomID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
-	_, err := testQueries.GetUserByID(context.Background(), randomID)
-	assert.Error(t, err)
-}
-
-func TestCreateUserDuplicateEmail(t *testing.T) {
-	user := createRandomUser(t)
-
-	arg := CreateUserParams{
-		Email:    user.Email,
-		Name:     user.Name,
-		Password: "another_hash",
-	}
-
-	_, err := testQueries.CreateUser(context.Background(), arg)
-	assert.Error(t, err)
+	require.Equal(t, user1.ID, user2.ID)
+	require.Equal(t, user1.GoogleID, user2.GoogleID)
+	require.Equal(t, user1.Email, user2.Email)
+	require.Equal(t, user1.Name, user2.Name)
+	require.Equal(t, user1.Balance, user2.Balance)
+	require.Equal(t, user1.AvatarUrl, user2.AvatarUrl)
+	require.Equal(t, user1.CreatedAt.Time.Unix(), user2.CreatedAt.Time.Unix())
+	require.Equal(t, user1.UpdatedAt.Time.Unix(), user2.UpdatedAt.Time.Unix())
 }
 
 func TestUpdateUser(t *testing.T) {
-	user := createRandomUser(t)
+	user1 := createRandomUserForTest(t)
 
-	newRandomEmail := util.GetRandomEmail()
-	newRandomName := util.GetRandomName()
+	newName := pgtype.Text{String: util.RandomString(8), Valid: true}
+	newAvatarUrl := pgtype.Text{String: util.RandomString(25), Valid: true}
 
 	arg := UpdateUserParams{
-		ID:    user.ID,
-		Email: newRandomEmail,
-		Name:  newRandomName,
+		ID:        user1.ID,
+		Name:      newName,
+		AvatarUrl: newAvatarUrl,
 	}
 
-	updatedUser, err := testQueries.UpdateUser(context.Background(), arg)
+	err := testStore.UpdateUser(context.Background(), arg)
 	require.NoError(t, err)
-	require.NotEmpty(t, updatedUser)
 
-	assert.Equal(t, user.ID, updatedUser.ID)
-	assert.Equal(t, newRandomEmail.String, updatedUser.Email)
+	user2, err := testStore.GetUser(context.Background(), user1.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, user2)
 
-	assert.WithinDuration(t, user.CreatedAt.Time, updatedUser.CreatedAt.Time, time.Second)
+	require.Equal(t, user1.ID, user2.ID)
+	require.Equal(t, newName, user2.Name)
+	require.Equal(t, newAvatarUrl, user2.AvatarUrl)
 
-	assert.True(t, updatedUser.UpdatedAt.Time.After(user.UpdatedAt.Time) ||
-		updatedUser.UpdatedAt.Time.Equal(user.UpdatedAt.Time))
+	require.Equal(t, user1.GoogleID, user2.GoogleID)
+	require.Equal(t, user1.Email, user2.Email)
+	require.Equal(t, user1.Balance, user2.Balance)
+
+	require.True(t, user2.UpdatedAt.Time.After(user1.UpdatedAt.Time))
 }
 
-func TestUpdateUserNotFound(t *testing.T) {
-	userID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+func TestUpdateUserBalance(t *testing.T) {
+	user1 := createRandomUserForTest(t)
 
-	newRandomEmail := util.GetRandomEmail()
-	newRandomName := util.GetRandomName()
+	newBalance := util.RandomBalance()
 
-	arg := UpdateUserParams{
-		ID:    userID,
-		Email: newRandomEmail,
-		Name:  newRandomName,
+	arg := UpdateUserBalanceParams{
+		ID:      user1.ID,
+		Balance: newBalance,
 	}
 
-	_, err := testQueries.UpdateUser(context.Background(), arg)
-	assert.Error(t, err)
+	err := testStore.UpdateUserBalance(context.Background(), arg)
+	require.NoError(t, err)
+
+	user2, err := testStore.GetUser(context.Background(), user1.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, user2)
+
+	require.Equal(t, user1.ID, user2.ID)
+	require.Equal(t, newBalance, user2.Balance)
+
+	require.Equal(t, user1.GoogleID, user2.GoogleID)
+	require.Equal(t, user1.Email, user2.Email)
+	require.Equal(t, user1.Name, user2.Name)
+	require.Equal(t, user1.AvatarUrl, user2.AvatarUrl)
+
+	require.True(t, user2.UpdatedAt.Time.After(user1.UpdatedAt.Time))
 }
 
 func TestDeleteUser(t *testing.T) {
-	user := createRandomUser(t)
 
-	err := testQueries.DeleteUser(context.Background(), user.ID)
+	user1 := createRandomUserForTest(t)
+
+	err := testStore.DeleteUser(context.Background(), user1.ID)
 	require.NoError(t, err)
 
-	_, err = testQueries.GetUserByID(context.Background(), user.ID)
-	assert.Error(t, err)
-}
-
-func TestDeleteUserNotFound(t *testing.T) {
-	user := createRandomUser(t)
-
-	err := testQueries.DeleteUser(context.Background(), user.ID)
-	require.NoError(t, err)
-}
-
-func TestListUsers(t *testing.T) {
-	for i := 0; i < 5; i++ {
-		createRandomUser(t)
-	}
-
-	arg := ListUsersParams{
-		Limit:  3,
-		Offset: 0,
-	}
-
-	users, err := testQueries.ListUsers(context.Background(), arg)
-	require.NoError(t, err)
-	require.Len(t, users, 3)
-
-	arg.Offset = 2
-	users, err = testQueries.ListUsers(context.Background(), arg)
-	require.NoError(t, err)
-	require.Len(t, users, 3)
-}
-
-func TestListUsersEmpty(t *testing.T) {
-	arg := ListUsersParams{
-		Limit:  10,
-		Offset: 0,
-	}
-
-	users, err := testQueries.ListUsers(context.Background(), arg)
-	require.NoError(t, err)
-
-	assert.NotNil(t, users)
+	_, err = testStore.GetUser(context.Background(), user1.ID)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, sql.ErrNoRows), "Expected sql.ErrNoRows, got %v", err)
 }

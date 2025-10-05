@@ -9,13 +9,13 @@ type Store interface {
 }
 
 type SQLStore struct {
+	connPool *pgxpool.Pool
 	*Queries
-	db *pgxpool.Pool
 }
 
-func NewStore(db *pgxpool.Pool) Store {
+func NewStore(connPool *pgxpool.Pool) Store {
 	return &SQLStore{
-		Queries: New(db),
-		db:      db,
+		connPool: connPool,
+		Queries:  New(connPool),
 	}
 }

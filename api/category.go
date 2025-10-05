@@ -1,199 +1,263 @@
 package api
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
-	"strings"
 
 	db "github.com/franklindh/catat/db/sqlc"
+	"github.com/franklindh/catat/token"
 	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type createCategoryRequest struct {
-	UserID string `json:"user_id" binding:"required,uuid"`
-	Name   string `json:"name" binding:"required"`
-	Type   string `json:"type" binding:"required,oneof=income expense"`
+type categoryResponse struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    string             `json:"user_id"`
+	Name      string             `json:"name"`
+	IconURL   string             `json:"icon_url"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-type listCategoriesRequest struct {
-	UserID string `form:"user_id" binding:"required,uuid"`
+type createCategoryRequest struct {
+	Name    string `json:"name" binding:"required"`
+	IconURL string `json:"icon_url"`
 }
 
 type updateCategoryRequest struct {
-	ID     string `json:"id" binding:"required,uuid"`
-	Name   string `json:"name" binding:"required"`
-	Type   string `json:"type" binding:"required,oneof=income expense"`
-	UserID string `json:"user_id" binding:"required,uuid"`
+	Name    string `json:"name" binding:"required"`
+	IconURL string `json:"icon_url"`
+}
+
+func categoryToCategoryResponse(category db.Category) categoryResponse {
+	return categoryResponse{
+		ID:        util.PgxUUIDToGoogleUUID(category.ID),
+		UserID:    util.PgxUUIDToGoogleUUID(category.UserID).String(),
+		Name:      category.Name,
+		IconURL:   category.IconUrl.String,
+		CreatedAt: category.CreatedAt,
+		UpdatedAt: category.UpdatedAt,
+	}
+}
+
+func categoriesToCategoryResponses(categories []db.Category) []categoryResponse {
+	var responses []categoryResponse
+	for _, category := range categories {
+		responses = append(responses, categoryToCategoryResponse(category))
+	}
+	return responses
 }
 
 func (s *Server) createCategory(ctx *gin.Context) {
-	var req createCategoryRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+
+	payload, exists := ctx.Get(authorizationPayloadKey)
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("authorization payload not found")))
 		return
 	}
 
-	userID, err := util.ParseUUID(req.UserID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid user ID format"))
+	authPayload, ok := payload.(*token.Payload)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("invalid authorization payload")))
+		return
+	}
+
+	var req createCategoryRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
 		return
 	}
 
 	arg := db.CreateCategoryParams{
-		UserID: userID,
-		Name:   req.Name,
-		Type:   req.Type,
+		UserID:  util.GoogleUUIDToPgxUUID(authPayload.UserID),
+		Name:    req.Name,
+		IconUrl: pgtype.Text{String: req.IconURL, Valid: req.IconURL != ""},
 	}
 
-	category, err := s.Store.CreateCategory(ctx, arg)
+	category, err := s.store.CreateCategory(ctx, arg)
 	if err != nil {
+
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, category)
+	rsp := categoryToCategoryResponse(category)
+	ctx.JSON(http.StatusCreated, rsp)
 }
 
 func (s *Server) getCategory(ctx *gin.Context) {
-	var uriReq struct {
-		ID string `uri:"id" binding:"required,uuid"`
-	}
-	if err := ctx.ShouldBindUri(&uriReq); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+	payload, exists := ctx.Get(authorizationPayloadKey)
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("authorization required")))
 		return
 	}
 
-	var queryReq struct {
-		UserID string `form:"user_id" binding:"required,uuid"`
-	}
-	if err := ctx.ShouldBindQuery(&queryReq); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+	authPayload, ok := payload.(*token.Payload)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("invalid authorization payload")))
 		return
 	}
 
-	categoryID, err := util.ParseUUID(uriReq.ID)
+	categories, err := s.store.GetCategoriesByUser(ctx, util.GoogleUUIDToPgxUUID(authPayload.UserID))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid category ID format"))
-		return
-	}
-
-	userID, err := util.ParseUUID(queryReq.UserID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid user ID format"))
-		return
-	}
-
-	arg := db.GetCategoryParams{
-		ID:     categoryID,
-		UserID: userID,
-	}
-
-	category, err := s.Store.GetCategory(ctx, arg)
-	if err != nil {
-		if strings.Contains(err.Error(), "no rows in result set") {
-			ctx.JSON(http.StatusNotFound, util.ErrorResponseWithMessage("account not found"))
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			ctx.JSON(http.StatusOK, []categoryResponse{})
 			return
 		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, category)
+	rsp := categoriesToCategoryResponses(categories)
+	ctx.JSON(http.StatusOK, rsp)
 }
 
-func (s *Server) listCategories(ctx *gin.Context) {
-	var req listCategoriesRequest
-	if err := ctx.ShouldBindQuery(&req); err != nil {
+func (s *Server) getCategoryByID(ctx *gin.Context) {
+	payload, exists := ctx.Get(authorizationPayloadKey)
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("authorization required")))
+		return
+	}
+
+	authPayload, ok := payload.(*token.Payload)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("invalid authorization payload")))
+		return
+	}
+
+	categoryIDStr := ctx.Param("id")
+	categoryID, err := uuid.Parse(categoryIDStr)
+	if err != nil {
 		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
 		return
 	}
 
-	userID, err := util.ParseUUID(req.UserID)
+	category, err := s.store.GetCategory(ctx, util.GoogleUUIDToPgxUUID(categoryID))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid user ID format"))
-		return
-	}
-
-	categories, err := s.Store.ListCategories(ctx, userID)
-	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponse(err))
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, categories)
+	if util.PgxUUIDToGoogleUUID(category.UserID) != authPayload.UserID {
+		ctx.JSON(http.StatusForbidden, util.ErrorResponse(errors.New("forbidden: cannot access other user's category")))
+		return
+	}
+
+	rsp := categoryToCategoryResponse(category)
+	ctx.JSON(http.StatusOK, rsp)
 }
 
 func (s *Server) updateCategory(ctx *gin.Context) {
+	payload, exists := ctx.Get(authorizationPayloadKey)
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("authorization required")))
+		return
+	}
+
+	authPayload, ok := payload.(*token.Payload)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("invalid authorization payload")))
+		return
+	}
+
+	categoryIDStr := ctx.Param("id")
+	categoryID, err := uuid.Parse(categoryIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid category ID format")))
+		return
+	}
+
 	var req updateCategoryRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
 		return
 	}
 
-	categoryID, err := util.ParseUUID(req.ID)
+	existingCategory, err := s.store.GetCategory(ctx, util.GoogleUUIDToPgxUUID(categoryID))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid category ID format"))
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponse(errors.New("category not found")))
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
 
-	userID, err := util.ParseUUID(req.UserID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid user ID format"))
+	if util.PgxUUIDToGoogleUUID(existingCategory.UserID) != authPayload.UserID {
+		ctx.JSON(http.StatusForbidden, util.ErrorResponse(errors.New("forbidden: cannot access other user's category")))
 		return
 	}
 
 	arg := db.UpdateCategoryParams{
-		ID:     categoryID,
-		Name:   req.Name,
-		Type:   req.Type,
-		UserID: userID,
+		ID:      util.GoogleUUIDToPgxUUID(categoryID),
+		Name:    req.Name,
+		IconUrl: pgtype.Text{String: req.IconURL, Valid: req.IconURL != ""},
+		UserID:  util.GoogleUUIDToPgxUUID(authPayload.UserID),
 	}
 
-	category, err := s.Store.UpdateCategory(ctx, arg)
+	updatedCategory, err := s.store.UpdateCategory(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, category)
+	rsp := categoryToCategoryResponse(updatedCategory)
+	ctx.JSON(http.StatusOK, rsp)
 }
 
 func (s *Server) deleteCategory(ctx *gin.Context) {
-	var uriReq struct {
-		ID string `uri:"id" binding:"required,uuid"`
-	}
-	if err := ctx.ShouldBindUri(&uriReq); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+
+	payload, exists := ctx.Get(authorizationPayloadKey)
+	if !exists {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("authorization payload not found")))
 		return
 	}
 
-	var queryReq struct {
-		UserID string `form:"user_id" binding:"required,uuid"`
-	}
-	if err := ctx.ShouldBindQuery(&queryReq); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
+	authPayload, ok := payload.(*token.Payload)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("invalid authorization payload")))
 		return
 	}
 
-	categoryID, err := util.ParseUUID(uriReq.ID)
+	categoryIDStr := ctx.Param("id")
+	categoryID, err := uuid.Parse(categoryIDStr)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid category ID format"))
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid category ID format")))
 		return
 	}
 
-	userID, err := util.ParseUUID(queryReq.UserID)
+	existingCategory, err := s.store.GetCategory(ctx, util.GoogleUUIDToPgxUUID(categoryID))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponseWithMessage("invalid user ID format"))
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			ctx.JSON(http.StatusNotFound, util.ErrorResponse(errors.New("category not found")))
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
+		return
+	}
+
+	if existingCategory.UserID != util.GoogleUUIDToPgxUUID(authPayload.UserID) {
+		ctx.JSON(http.StatusForbidden, util.ErrorResponse(errors.New("access forbidden: cannot delete other user's category")))
 		return
 	}
 
 	arg := db.DeleteCategoryParams{
-		ID:     categoryID,
-		UserID: userID,
+		ID:     util.GoogleUUIDToPgxUUID(categoryID),
+		UserID: util.GoogleUUIDToPgxUUID(authPayload.UserID),
 	}
 
-	err = s.Store.DeleteCategory(ctx, arg)
+	err = s.store.DeleteCategory(ctx, arg)
 	if err != nil {
+
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}

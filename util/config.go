@@ -1,57 +1,37 @@
 package util
 
 import (
-	"log"
-	"os"
+	"time"
 
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	DBDriver      string `mapstructure:"DB_DRIVER"`
-	DBSource      string `mapstructure:"DB_SOURCE"`
-	ServerAddress string `mapstructure:"SERVER_ADDRESS"`
+	DBDriver                string        `mapstructure:"DB_DRIVER"`
+	DBSource                string        `mapstructure:"DB_SOURCE"`
+	ServerAddress           string        `mapstructure:"SERVER_ADDRESS"`
+	TokenSymmetricKey       string        `mapstructure:"TOKEN_SYMMETRIC_KEY"`
+	AccessTokenDuration     time.Duration `mapstructure:"ACCESS_TOKEN_DURATION"`
+	GoogleOAuthClientID     string        `mapstructure:"GOOGLE_OAUTH_CLIENT_ID"`
+	GoogleOAuthClientSecret string        `mapstructure:"GOOGLE_OAUTH_CLIENT_SECRET"`
+	GoogleOAuthRedirectURL  string        `mapstructure:"GOOGLE_OAUTH_REDIRECT_URL"`
 }
 
 func LoadConfig(path string) (config Config, err error) {
-	envServerAddr := os.Getenv("SERVER_ADDRESS")
-	envDBSource := os.Getenv("DB_SOURCE")
-	envDBDriver := os.Getenv("DB_DRIVER")
+	viper.AddConfigPath(path)
+	viper.SetConfigName("app")
+	viper.SetConfigType("env")
 
-	if envServerAddr != "" {
-		config.ServerAddress = envServerAddr
-	}
-	if envDBSource != "" {
-		config.DBSource = envDBSource
-	}
-	if envDBDriver != "" {
-		config.DBDriver = envDBDriver
-	}
+	viper.AutomaticEnv()
 
-	if config.ServerAddress == "" || config.DBSource == "" {
-		viper.AddConfigPath(path)
-		viper.SetConfigName("app")
-		viper.SetConfigType("env")
+	err = viper.ReadInConfig()
+	if err != nil {
 
-		viper.AutomaticEnv()
-
-		err = viper.ReadInConfig()
-		if err != nil {
-			log.Printf("Warning: Cannot read config file: %v", err)
-		} else {
-			viper.Unmarshal(&config)
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return
 		}
 	}
 
-	if config.ServerAddress == "" {
-		config.ServerAddress = ":3000"
-	}
-	if config.DBSource == "" {
-		config.DBSource = "postgresql://postgres:password@localhost:5432/catat_db?sslmode=disable"
-	}
-	if config.DBDriver == "" {
-		config.DBDriver = "postgres"
-	}
-
+	err = viper.Unmarshal(&config)
 	return
 }

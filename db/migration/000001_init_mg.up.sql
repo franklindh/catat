@@ -23,7 +23,6 @@ CREATE TABLE "transactions" (
   "user_id" uuid NOT NULL,
   "category_id" uuid NOT NULL,
   "amount" numeric(19,4) NOT NULL,
-  "balance_after" numeric(19,4) NOT NULL DEFAULT 0,
   "description" text,
   "transaction_date" timestamptz NOT NULL,
   "created_at" timestamptz NOT NULL DEFAULT (now())
