@@ -1,13 +1,13 @@
-URL = "postgresql://root:password@localhost:5432/catat_db?sslmode=disable"
+URL = "postgresql://root:password@localhost:5432/catat?sslmode=disable"
 
 postgres:
-	docker run --name postgres -p 5432:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=password -d postgres:17-alpine
+	docker run --name postgres-catat -p 5432:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=password -d postgres:17-alpine
 
 createdb:
-	docker exec -it postgres createdb --username=root --owner=root catat_db
+	docker exec -it postgres-catat createdb --username=root --owner=root catat
 
 dropdb:
-	docker exec -it postgres dropdb catat_db
+	docker exec -it postgres-catat dropdb catat
 
 new_migration:
 	migrate create -ext sql -dir db/migration -seq $(name)
