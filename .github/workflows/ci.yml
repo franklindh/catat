@@ -19,7 +19,7 @@ jobs:
         env:
           POSTGRES_USER: root
           POSTGRES_PASSWORD: password
-          POSTGRES_DB: catat_db
+          POSTGRES_DB: catat
         options: >-
           --health-cmd pg_isready
           --health-interval 10s

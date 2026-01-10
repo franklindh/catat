@@ -9,31 +9,35 @@ import (
 )
 
 type Category struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"user_id"`
+	ID        int64              `json:"id"`
+	UserID    int64              `json:"user_id"`
 	Name      string             `json:"name"`
+	Type      string             `json:"type"`
 	IconUrl   pgtype.Text        `json:"icon_url"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Transaction struct {
-	ID              pgtype.UUID        `json:"id"`
-	UserID          pgtype.UUID        `json:"user_id"`
-	CategoryID      pgtype.UUID        `json:"category_id"`
+	ID              int64              `json:"id"`
+	UserID          int64              `json:"user_id"`
+	CategoryID      pgtype.Int8        `json:"category_id"`
 	Amount          pgtype.Numeric     `json:"amount"`
 	Description     pgtype.Text        `json:"description"`
 	TransactionDate pgtype.Timestamptz `json:"transaction_date"`
+	Type            string             `json:"type"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type User struct {
-	ID        pgtype.UUID        `json:"id"`
-	GoogleID  string             `json:"google_id"`
-	Email     string             `json:"email"`
-	Name      pgtype.Text        `json:"name"`
-	Balance   pgtype.Numeric     `json:"balance"`
-	AvatarUrl pgtype.Text        `json:"avatar_url"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	ID           int64              `json:"id"`
+	Email        string             `json:"email"`
+	Name         pgtype.Text        `json:"name"`
+	AvatarUrl    pgtype.Text        `json:"avatar_url"`
+	GoogleAuthID pgtype.Text        `json:"google_auth_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }

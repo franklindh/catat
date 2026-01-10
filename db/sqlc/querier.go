@@ -11,25 +11,24 @@ import (
 )
 
 type Querier interface {
-	CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error)
-	CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error)
+	CreateCategory(ctx context.Context, arg CreateCategoryParams) (CreateCategoryRow, error)
+	CreateTransaction(ctx context.Context, arg CreateTransactionParams) (CreateTransactionRow, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteCategory(ctx context.Context, arg DeleteCategoryParams) error
 	DeleteTransaction(ctx context.Context, arg DeleteTransactionParams) error
-	DeleteUser(ctx context.Context, id pgtype.UUID) error
-	GetCategoriesByUser(ctx context.Context, userID pgtype.UUID) ([]Category, error)
-	GetCategory(ctx context.Context, id pgtype.UUID) (Category, error)
-	GetCategoryByName(ctx context.Context, arg GetCategoryByNameParams) (Category, error)
-	GetTransaction(ctx context.Context, id pgtype.UUID) (Transaction, error)
-	GetTransactions(ctx context.Context, arg GetTransactionsParams) ([]Transaction, error)
-	GetTransactionsByDateRange(ctx context.Context, arg GetTransactionsByDateRangeParams) ([]Transaction, error)
-	GetUser(ctx context.Context, id pgtype.UUID) (User, error)
+	DeleteUser(ctx context.Context, id int64) error
+	GetCategoriesByUser(ctx context.Context, arg GetCategoriesByUserParams) ([]GetCategoriesByUserRow, error)
+	GetCategory(ctx context.Context, id int64) (GetCategoryRow, error)
+	GetExpenseByDateRange(ctx context.Context, arg GetExpenseByDateRangeParams) (interface{}, error)
+	GetTransaction(ctx context.Context, arg GetTransactionParams) (GetTransactionRow, error)
+	GetUser(ctx context.Context, id int64) (User, error)
+	GetUserBalance(ctx context.Context, userID int64) (int32, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
-	GetUserByGoogleID(ctx context.Context, googleID string) (User, error)
-	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (Category, error)
-	UpdateTransaction(ctx context.Context, arg UpdateTransactionParams) (Transaction, error)
-	UpdateUser(ctx context.Context, arg UpdateUserParams) error
-	UpdateUserBalance(ctx context.Context, arg UpdateUserBalanceParams) error
+	GetUserByGoogleAuthID(ctx context.Context, googleAuthID pgtype.Text) (User, error)
+	ListTransactions(ctx context.Context, arg ListTransactionsParams) ([]ListTransactionsRow, error)
+	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (UpdateCategoryRow, error)
+	UpdateTransaction(ctx context.Context, arg UpdateTransactionParams) (UpdateTransactionRow, error)
+	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

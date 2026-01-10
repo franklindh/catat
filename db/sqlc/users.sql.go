@@ -12,35 +12,32 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (google_id, email, name, balance, avatar_url)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, google_id, email, name, balance, avatar_url, created_at, updated_at
+INSERT INTO users (email, name, avatar_url, google_auth_id)
+VALUES ($1, $2, $3, $4)
+RETURNING id, email, name, avatar_url, google_auth_id, created_at, updated_at
 `
 
 type CreateUserParams struct {
-	GoogleID  string         `json:"google_id"`
-	Email     string         `json:"email"`
-	Name      pgtype.Text    `json:"name"`
-	Balance   pgtype.Numeric `json:"balance"`
-	AvatarUrl pgtype.Text    `json:"avatar_url"`
+	Email        string      `json:"email"`
+	Name         pgtype.Text `json:"name"`
+	AvatarUrl    pgtype.Text `json:"avatar_url"`
+	GoogleAuthID pgtype.Text `json:"google_auth_id"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, createUser,
-		arg.GoogleID,
 		arg.Email,
 		arg.Name,
-		arg.Balance,
 		arg.AvatarUrl,
+		arg.GoogleAuthID,
 	)
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.GoogleID,
 		&i.Email,
 		&i.Name,
-		&i.Balance,
 		&i.AvatarUrl,
+		&i.GoogleAuthID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -48,31 +45,28 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const deleteUser = `-- name: DeleteUser :exec
-DELETE FROM users
-WHERE id = $1
+DELETE FROM users WHERE id = $1
 `
 
-func (q *Queries) DeleteUser(ctx context.Context, id pgtype.UUID) error {
+func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, deleteUser, id)
 	return err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, google_id, email, name, balance, avatar_url, created_at, updated_at
-FROM users
-WHERE id = $1 LIMIT 1
+SELECT id, email, name, avatar_url, google_auth_id, created_at, updated_at
+FROM users WHERE id = $1 LIMIT 1
 `
 
-func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (User, error) {
+func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 	row := q.db.QueryRow(ctx, getUser, id)
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.GoogleID,
 		&i.Email,
 		&i.Name,
-		&i.Balance,
 		&i.AvatarUrl,
+		&i.GoogleAuthID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -80,9 +74,8 @@ func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (User, error) {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, google_id, email, name, balance, avatar_url, created_at, updated_at
-FROM users
-WHERE email = $1 LIMIT 1
+SELECT id, email, name, avatar_url, google_auth_id, created_at, updated_at
+FROM users WHERE email = $1 LIMIT 1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -90,68 +83,62 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.GoogleID,
 		&i.Email,
 		&i.Name,
-		&i.Balance,
 		&i.AvatarUrl,
+		&i.GoogleAuthID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const getUserByGoogleID = `-- name: GetUserByGoogleID :one
-SELECT id, google_id, email, name, balance, avatar_url, created_at, updated_at
-FROM users
-WHERE google_id = $1 LIMIT 1
+const getUserByGoogleAuthID = `-- name: GetUserByGoogleAuthID :one
+SELECT id, email, name, avatar_url, google_auth_id, created_at, updated_at
+FROM users WHERE google_auth_id = $1 LIMIT 1
 `
 
-func (q *Queries) GetUserByGoogleID(ctx context.Context, googleID string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByGoogleID, googleID)
+func (q *Queries) GetUserByGoogleAuthID(ctx context.Context, googleAuthID pgtype.Text) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByGoogleAuthID, googleAuthID)
 	var i User
 	err := row.Scan(
 		&i.ID,
-		&i.GoogleID,
 		&i.Email,
 		&i.Name,
-		&i.Balance,
 		&i.AvatarUrl,
+		&i.GoogleAuthID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const updateUser = `-- name: UpdateUser :exec
+const updateUser = `-- name: UpdateUser :one
 UPDATE users
-SET name = $2, avatar_url = $3, updated_at = NOW()
+SET 
+    name = $2, 
+    avatar_url = $3
 WHERE id = $1
+RETURNING id, email, name, avatar_url, google_auth_id, created_at, updated_at
 `
 
 type UpdateUserParams struct {
-	ID        pgtype.UUID `json:"id"`
+	ID        int64       `json:"id"`
 	Name      pgtype.Text `json:"name"`
 	AvatarUrl pgtype.Text `json:"avatar_url"`
 }
 
-func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
-	_, err := q.db.Exec(ctx, updateUser, arg.ID, arg.Name, arg.AvatarUrl)
-	return err
-}
-
-const updateUserBalance = `-- name: UpdateUserBalance :exec
-UPDATE users
-SET balance = $2, updated_at = NOW()
-WHERE id = $1
-`
-
-type UpdateUserBalanceParams struct {
-	ID      pgtype.UUID    `json:"id"`
-	Balance pgtype.Numeric `json:"balance"`
-}
-
-func (q *Queries) UpdateUserBalance(ctx context.Context, arg UpdateUserBalanceParams) error {
-	_, err := q.db.Exec(ctx, updateUserBalance, arg.ID, arg.Balance)
-	return err
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUser, arg.ID, arg.Name, arg.AvatarUrl)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.AvatarUrl,
+		&i.GoogleAuthID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

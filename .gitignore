@@ -31,3 +31,5 @@ app.env
 # Editor/IDE
 # .idea/
 # .vscode/
+
+/web

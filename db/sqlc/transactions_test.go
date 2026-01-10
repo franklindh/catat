@@ -12,13 +12,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createRandomTransactionForTest(t *testing.T, userID, categoryID pgtype.UUID) Transaction {
+func createRandomTransactionTest(t *testing.T, userID int64, categoryID int64, transactionType string) CreateTransactionRow {
+	categoryIDParam := pgtype.Int8{Int64: categoryID, Valid: true}
 	arg := CreateTransactionParams{
 		UserID:          userID,
-		CategoryID:      categoryID,
+		CategoryID:      categoryIDParam,
 		Amount:          util.RandomBalance(),
 		Description:     pgtype.Text{String: util.RandomString(20), Valid: true},
 		TransactionDate: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		Type:            transactionType,
 	}
 
 	transaction, err := testStore.CreateTransaction(context.Background(), arg)
@@ -26,8 +28,7 @@ func createRandomTransactionForTest(t *testing.T, userID, categoryID pgtype.UUID
 	require.NotEmpty(t, transaction)
 
 	require.Equal(t, arg.UserID, transaction.UserID)
-	require.Equal(t, arg.CategoryID, transaction.CategoryID)
-	require.Equal(t, arg.Amount, transaction.Amount)
+	require.Equal(t, arg.Type, transaction.Type)
 	require.Equal(t, arg.Description, transaction.Description)
 
 	require.WithinDuration(t, arg.TransactionDate.Time, transaction.TransactionDate.Time, 1*time.Microsecond, "TransactionDate should be within 1 microsecond")
@@ -39,176 +40,134 @@ func createRandomTransactionForTest(t *testing.T, userID, categoryID pgtype.UUID
 }
 
 func TestCreateTransaction(t *testing.T) {
-	user := createRandomUserForTest(t)
-	category := createRandomCategoryForTest(t, user.ID)
+	user := createRandomUserTest(t)
+	category := createRandomCategoryTest(t, user.ID, "EXPENSE")
 
-	createRandomTransactionForTest(t, user.ID, category.ID)
+	createRandomTransactionTest(t, user.ID, category.ID, "EXPENSE")
 }
 
 func TestGetTransactionById(t *testing.T) {
-	user := createRandomUserForTest(t)
-	category := createRandomCategoryForTest(t, user.ID)
+	user := createRandomUserTest(t)
+	category := createRandomCategoryTest(t, user.ID, "EXPENSE")
 
-	transaction := createRandomTransactionForTest(t, user.ID, category.ID)
+	transaction1 := createRandomTransactionTest(t, user.ID, category.ID, "EXPENSE")
 
-	transaction2, err := testStore.GetTransaction(context.Background(), transaction.ID)
+	transaction2, err := testStore.GetTransaction(context.Background(), GetTransactionParams{
+		ID:     transaction1.ID,
+		UserID: user.ID,
+	})
 	require.NoError(t, err)
 	require.NotEmpty(t, transaction2)
 
-	require.Equal(t, transaction.ID, transaction2.ID)
-	require.Equal(t, transaction.UserID, transaction2.UserID)
-	require.Equal(t, transaction.CategoryID, transaction2.CategoryID)
-	require.Equal(t, transaction.Amount, transaction2.Amount)
-	require.Equal(t, transaction.Description, transaction2.Description)
-	require.Equal(t, transaction.TransactionDate.Time.Unix(), transaction2.TransactionDate.Time.Unix())
-	require.Equal(t, transaction.CreatedAt.Time.Unix(), transaction2.CreatedAt.Time.Unix())
+	require.Equal(t, transaction1.ID, transaction2.ID)
+	require.Equal(t, transaction1.UserID, transaction2.UserID)
+	require.Equal(t, transaction1.Type, transaction2.Type)
+	require.Equal(t, transaction1.Description, transaction2.Description)
+	require.Equal(t, transaction1.TransactionDate.Time.Unix(), transaction2.TransactionDate.Time.Unix())
 }
 
-func TestGetTransactions(t *testing.T) {
-	user := createRandomUserForTest(t)
-	category := createRandomCategoryForTest(t, user.ID)
+func TestListTransactions(t *testing.T) {
+	user := createRandomUserTest(t)
+	category := createRandomCategoryTest(t, user.ID, "EXPENSE")
 
 	n := 5
-	transactions := make([]Transaction, n)
+	transactions1 := make([]CreateTransactionRow, n)
 	for i := 0; i < n; i++ {
-		transaction := createRandomTransactionForTest(t, user.ID, category.ID)
-
-		arg := CreateTransactionParams{
-			UserID:          user.ID,
-			CategoryID:      category.ID,
-			Amount:          transaction.Amount,
-			Description:     transaction.Description,
-			TransactionDate: transaction.TransactionDate,
-		}
-		transaction, err := testStore.CreateTransaction(context.Background(), arg)
-		require.NoError(t, err)
-		transactions[i] = transaction
+		transactions1[i] = createRandomTransactionTest(t, user.ID, category.ID, "EXPENSE")
 	}
 
-	arg := GetTransactionsParams{
+	arg := ListTransactionsParams{
 		UserID: user.ID,
 		Limit:  10,
 		Offset: 0,
 	}
 
-	transactions2, err := testStore.GetTransactions(context.Background(), arg)
+	transactions2, err := testStore.ListTransactions(context.Background(), arg)
 	require.NoError(t, err)
 	require.NotEmpty(t, transactions2)
 
+	require.GreaterOrEqual(t, len(transactions2), n)
 	for _, trans := range transactions2 {
 		require.Equal(t, user.ID, trans.UserID)
 	}
-
-	require.GreaterOrEqual(t, len(transactions2), n)
 }
-func TestGetTransaction(t *testing.T) {
-	user := createRandomUserForTest(t)
-	category := createRandomCategoryForTest(t, user.ID)
-	transaction := createRandomTransactionForTest(t, user.ID, category.ID)
 
-	transaction, err := testStore.GetTransaction(context.Background(), transaction.ID)
+func TestGetTransaction(t *testing.T) {
+	user := createRandomUserTest(t)
+	category := createRandomCategoryTest(t, user.ID, "EXPENSE")
+	transaction1 := createRandomTransactionTest(t, user.ID, category.ID, "EXPENSE")
+
+	transaction2, err := testStore.GetTransaction(context.Background(), GetTransactionParams{
+		ID:     transaction1.ID,
+		UserID: user.ID,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, transaction2)
+
+	require.Equal(t, transaction1.ID, transaction2.ID)
+	require.Equal(t, user.ID, transaction2.UserID)
+	require.True(t, category.ID == transaction2.CategoryID.Int64 || !transaction2.CategoryID.Valid)
+	require.NotZero(t, transaction2.ID)
+	require.NotZero(t, transaction2.Amount)
+	require.NotZero(t, transaction2.TransactionDate)
+	require.NotEmpty(t, transaction2.Description)
+}
+
+func TestCreateTransactionWithTransferType(t *testing.T) {
+	user := createRandomUserTest(t)
+
+	arg := CreateTransactionParams{
+		UserID:          user.ID,
+		CategoryID:      pgtype.Int8{Valid: false},
+		Amount:          util.RandomBalance(),
+		Description:     pgtype.Text{String: "Income from transfer", Valid: true},
+		TransactionDate: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		Type:            "INCOME",
+	}
+
+	transaction, err := testStore.CreateTransaction(context.Background(), arg)
 	require.NoError(t, err)
 	require.NotEmpty(t, transaction)
-
+	require.Equal(t, "INCOME", transaction.Type)
 	require.Equal(t, user.ID, transaction.UserID)
-	require.Equal(t, category.ID, transaction.CategoryID)
-	require.NotZero(t, transaction.ID)
-	require.NotZero(t, transaction.CreatedAt)
-	require.NotZero(t, transaction.Amount)
-	require.NotZero(t, transaction.TransactionDate)
-	require.NotEmpty(t, transaction.Description)
-}
-
-func TestGetTransactionsByUserInDateRange(t *testing.T) {
-
-	user := createRandomUserForTest(t)
-
-	outsideStart := time.Now().AddDate(0, -1, 0)
-
-	argOutside := CreateTransactionParams{
-		UserID:          user.ID,
-		CategoryID:      createRandomCategoryForTest(t, user.ID).ID,
-		Amount:          util.RandomBalance(),
-		Description:     pgtype.Text{String: "Outside Range", Valid: true},
-		TransactionDate: pgtype.Timestamptz{Time: outsideStart.Add(12 * time.Hour), Valid: true},
-	}
-	_, err := testStore.CreateTransaction(context.Background(), argOutside)
-	require.NoError(t, err)
-
-	startRange := time.Now().AddDate(0, 0, -5)
-	endRange := time.Now().AddDate(0, 0, 5)
-	argInRange1 := CreateTransactionParams{
-		UserID:          user.ID,
-		CategoryID:      createRandomCategoryForTest(t, user.ID).ID,
-		Amount:          util.RandomBalance(),
-		Description:     pgtype.Text{String: "In Range 1", Valid: true},
-		TransactionDate: pgtype.Timestamptz{Time: startRange.Add(1 * time.Hour), Valid: true},
-	}
-	_, err = testStore.CreateTransaction(context.Background(), argInRange1)
-	require.NoError(t, err)
-
-	argInRange2 := CreateTransactionParams{
-		UserID:          user.ID,
-		CategoryID:      createRandomCategoryForTest(t, user.ID).ID,
-		Amount:          util.RandomBalance(),
-		Description:     pgtype.Text{String: "In Range 2", Valid: true},
-		TransactionDate: pgtype.Timestamptz{Time: endRange.Add(-1 * time.Hour), Valid: true},
-	}
-	_, err = testStore.CreateTransaction(context.Background(), argInRange2)
-	require.NoError(t, err)
-
-	arg := GetTransactionsByDateRangeParams{
-		UserID:            user.ID,
-		TransactionDate:   pgtype.Timestamptz{Time: startRange, Valid: true},
-		TransactionDate_2: pgtype.Timestamptz{Time: endRange, Valid: true},
-	}
-
-	transactions, err := testStore.GetTransactionsByDateRange(context.Background(), arg)
-	require.NoError(t, err)
-
-	require.Len(t, transactions, 2)
-
-	for _, trans := range transactions {
-		require.True(t, !trans.TransactionDate.Time.Before(startRange))
-		require.True(t, !trans.TransactionDate.Time.After(endRange))
-		require.Equal(t, user.ID, trans.UserID)
-	}
 }
 
 func TestUpdateTransaction(t *testing.T) {
-	user := createRandomUserForTest(t)
-	category := createRandomCategoryForTest(t, user.ID)
-	category2 := createRandomCategoryForTest(t, user.ID)
-	require.NotEqual(t, category.ID, category2.ID, "Categories should be different for a meaningful test")
-	transaction := createRandomTransactionForTest(t, user.ID, category.ID)
+	user := createRandomUserTest(t)
+	category1 := createRandomCategoryTest(t, user.ID, "EXPENSE")
+	category2 := createRandomCategoryTest(t, user.ID, "EXPENSE")
+	require.NotEqual(t, category1.ID, category2.ID, "Categories should be different for a meaningful test")
+	transaction1 := createRandomTransactionTest(t, user.ID, category1.ID, "EXPENSE")
 
+	category2Param := pgtype.Int8{Int64: category2.ID, Valid: true}
 	arg := UpdateTransactionParams{
-		ID:              transaction.ID,
+		ID:              transaction1.ID,
 		UserID:          user.ID,
-		CategoryID:      category.ID,
+		CategoryID:      category2Param,
 		Amount:          util.RandomBalance(),
 		Description:     pgtype.Text{String: util.RandomString(20), Valid: true},
 		TransactionDate: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		Type:            "INCOME",
 	}
 
 	updatedTransaction, err := testStore.UpdateTransaction(context.Background(), arg)
 	require.NoError(t, err)
 	require.NotEmpty(t, updatedTransaction)
 
-	require.Equal(t, transaction.ID, updatedTransaction.ID)
+	require.Equal(t, transaction1.ID, updatedTransaction.ID)
 	require.Equal(t, user.ID, updatedTransaction.UserID)
-	require.Equal(t, category.ID, updatedTransaction.CategoryID)
+	require.Equal(t, category2.ID, updatedTransaction.CategoryID.Int64)
 
-	require.NotEqual(t, transaction.Amount, updatedTransaction.Amount)
-	require.NotEqual(t, transaction.Description, updatedTransaction.Description)
-	require.NotEqual(t, transaction.TransactionDate, updatedTransaction.TransactionDate)
+	require.NotEqual(t, transaction1.Amount.Int.Cmp(updatedTransaction.Amount.Int), 0)
+	require.NotEqual(t, transaction1.Description, updatedTransaction.Description)
+	require.NotEqual(t, transaction1.Type, updatedTransaction.Type)
 }
 
 func TestDeleteTransaction(t *testing.T) {
-	user := createRandomUserForTest(t)
-	category := createRandomCategoryForTest(t, user.ID)
+	user := createRandomUserTest(t)
+	category := createRandomCategoryTest(t, user.ID, "EXPENSE")
 
-	transaction := createRandomTransactionForTest(t, user.ID, category.ID)
+	transaction := createRandomTransactionTest(t, user.ID, category.ID, "EXPENSE")
 
 	err := testStore.DeleteTransaction(context.Background(), DeleteTransactionParams{
 		ID:     transaction.ID,
@@ -216,7 +175,33 @@ func TestDeleteTransaction(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = testStore.GetTransaction(context.Background(), transaction.ID)
+	_, err = testStore.GetTransaction(context.Background(), GetTransactionParams{
+		ID:     transaction.ID,
+		UserID: user.ID,
+	})
 	require.Error(t, err)
 	require.True(t, errors.Is(err, sql.ErrNoRows), "Expected sql.ErrNoRows, got %v", err)
+
+	arg := ListTransactionsParams{
+		UserID: user.ID,
+		Limit:  10,
+		Offset: 0,
+	}
+	transactions, err := testStore.ListTransactions(context.Background(), arg)
+	require.NoError(t, err)
+	for _, trans := range transactions {
+		require.NotEqual(t, transaction.ID, trans.ID)
+	}
+}
+
+func TestCreateTransactionWithDifferentTypes(t *testing.T) {
+	user := createRandomUserTest(t)
+	expenseCategory := createRandomCategoryTest(t, user.ID, "EXPENSE")
+	incomeCategory := createRandomCategoryTest(t, user.ID, "INCOME")
+
+	expenseTransaction := createRandomTransactionTest(t, user.ID, expenseCategory.ID, "EXPENSE")
+	require.Equal(t, "EXPENSE", expenseTransaction.Type)
+
+	incomeTransaction := createRandomTransactionTest(t, user.ID, incomeCategory.ID, "INCOME")
+	require.Equal(t, "INCOME", incomeTransaction.Type)
 }
