@@ -17,7 +17,6 @@ import (
 	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
 	"github.com/golang/mock/gomock"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
@@ -28,10 +27,9 @@ func addAuthorization(
 	request *http.Request,
 	tokenMaker token.Maker,
 	authorizationType string,
-	userID uuid.UUID,
+	userID int64,
 	duration time.Duration,
 ) {
-
 	token, err := tokenMaker.CreateToken(userID, duration)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
@@ -52,9 +50,9 @@ func TestGetUser(t *testing.T) {
 	}{
 		{
 			name:   "OK",
-			userID: util.PgxUUIDToGoogleUUID(user.ID).String(),
+			userID: fmt.Sprintf("%d", user.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -82,9 +80,9 @@ func TestGetUser(t *testing.T) {
 		},
 		{
 			name:   "NotFound",
-			userID: util.PgxUUIDToGoogleUUID(user.ID).String(),
+			userID: fmt.Sprintf("%d", user.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -98,9 +96,9 @@ func TestGetUser(t *testing.T) {
 		},
 		{
 			name:   "InternalError",
-			userID: util.PgxUUIDToGoogleUUID(user.ID).String(),
+			userID: fmt.Sprintf("%d", user.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -156,7 +154,7 @@ func TestUpdateUser(t *testing.T) {
 				"avatar_url": "https://example.com/avatar.jpg",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				arg := db.UpdateUserParams{
@@ -164,10 +162,13 @@ func TestUpdateUser(t *testing.T) {
 					Name:      pgtype.Text{String: "Updated Name", Valid: true},
 					AvatarUrl: pgtype.Text{String: "https://example.com/avatar.jpg", Valid: true},
 				}
+				updatedUser := user
+				updatedUser.Name = pgtype.Text{String: "Updated Name", Valid: true}
+				updatedUser.AvatarUrl = pgtype.Text{String: "https://example.com/avatar.jpg", Valid: true}
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Eq(arg)).
 					Times(1).
-					Return(nil)
+					Return(updatedUser, nil)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
@@ -179,7 +180,7 @@ func TestUpdateUser(t *testing.T) {
 				"name": "Updated Name",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				arg := db.UpdateUserParams{
@@ -187,10 +188,12 @@ func TestUpdateUser(t *testing.T) {
 					Name:      pgtype.Text{String: "Updated Name", Valid: true},
 					AvatarUrl: pgtype.Text{String: "", Valid: false},
 				}
+				updatedUser := user
+				updatedUser.Name = pgtype.Text{String: "Updated Name", Valid: true}
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Eq(arg)).
 					Times(1).
-					Return(nil)
+					Return(updatedUser, nil)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
@@ -202,13 +205,13 @@ func TestUpdateUser(t *testing.T) {
 				"name": "Updated Name",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Any()).
 					Times(1).
-					Return(sql.ErrNoRows)
+					Return(db.User{}, sql.ErrNoRows)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusNotFound, recorder.Code)
@@ -220,13 +223,13 @@ func TestUpdateUser(t *testing.T) {
 				"name": "Updated Name",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Any()).
 					Times(1).
-					Return(sql.ErrConnDone)
+					Return(db.User{}, sql.ErrConnDone)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -239,7 +242,7 @@ func TestUpdateUser(t *testing.T) {
 				"avatar_url": "invalid-url",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 			},
@@ -300,7 +303,7 @@ func TestDeleteUser(t *testing.T) {
 		{
 			name: "OK",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -315,7 +318,7 @@ func TestDeleteUser(t *testing.T) {
 		{
 			name: "UserNotFound",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -330,7 +333,7 @@ func TestDeleteUser(t *testing.T) {
 		{
 			name: "InternalError",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -381,14 +384,13 @@ func TestDeleteUser(t *testing.T) {
 
 func randomUser() db.User {
 	return db.User{
-		ID:        util.GoogleUUIDToPgxUUID(uuid.New()),
-		GoogleID:  util.RandomString(12),
-		Email:     util.RandomEmail(),
-		Name:      pgtype.Text{String: util.RandomName(), Valid: true},
-		Balance:   pgtype.Numeric{Valid: true},
-		AvatarUrl: pgtype.Text{String: "https://example.com/avatar.jpg", Valid: true},
-		CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-		UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		ID:           util.RandomInt(1, 1000000),
+		Email:        util.RandomEmail(),
+		Name:         pgtype.Text{String: util.RandomName(), Valid: true},
+		AvatarUrl:    pgtype.Text{String: "https://example.com/avatar.jpg", Valid: true},
+		GoogleAuthID: pgtype.Text{String: util.RandomString(12), Valid: true},
+		CreatedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		UpdatedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	}
 }
 
@@ -400,12 +402,11 @@ func requireBodyMatchUser(t *testing.T, body *bytes.Buffer, user db.User) {
 	err = json.Unmarshal(data, &gotUser)
 	require.NoError(t, err)
 
-	require.Equal(t, util.PgxUUIDToGoogleUUID(user.ID), gotUser.ID)
-	require.Equal(t, user.GoogleID, gotUser.GoogleID)
+	require.Equal(t, user.ID, gotUser.ID)
+	require.Equal(t, user.GoogleAuthID.String, gotUser.GoogleID)
 	require.Equal(t, user.Email, gotUser.Email)
 	require.Equal(t, user.Name.String, gotUser.Name)
 	require.Equal(t, user.AvatarUrl.String, gotUser.AvatarUrl)
-	require.NotEmpty(t, gotUser.Balance)
 	require.NotEmpty(t, gotUser.CreatedAt)
 	require.NotEmpty(t, gotUser.UpdatedAt)
 }

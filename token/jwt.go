@@ -1,4 +1,3 @@
-// token/jwt_maker.go
 package token
 
 import (
@@ -25,11 +24,11 @@ func NewJWTMaker(signingKey string) (Maker, error) {
 }
 
 type jwtPayload struct {
-	UserID uuid.UUID `json:"user_id"`
+	UserID int64 `json:"user_id"`
 	jwt.RegisteredClaims
 }
 
-func (maker *JWTMaker) CreateToken(userID uuid.UUID, duration time.Duration) (string, error) {
+func (maker *JWTMaker) CreateToken(userID int64, duration time.Duration) (string, error) {
 	payload, err := NewPayload(userID, duration)
 	if err != nil {
 		return "", err
@@ -73,14 +72,14 @@ func (maker *JWTMaker) VerifyToken(tokenString string) (*Payload, error) {
 		return nil, ErrInvalidToken
 	}
 
-	userID, err := uuid.Parse(claims.UserID.String())
+	tokenID, err := uuid.Parse(claims.ID)
 	if err != nil {
 		return nil, ErrInvalidToken
 	}
 
 	payload := &Payload{
-		ID:        uuid.MustParse(claims.ID),
-		UserID:    userID,
+		ID:        tokenID,
+		UserID:    claims.UserID,
 		IssuedAt:  claims.IssuedAt.Time,
 		ExpiredAt: claims.ExpiresAt.Time,
 	}

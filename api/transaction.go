@@ -1,76 +1,120 @@
 package api
 
 import (
-	"database/sql"
 	"errors"
-	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	db "github.com/franklindh/catat/db/sqlc"
 	"github.com/franklindh/catat/token"
 	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type transactionResponse struct {
-	ID              uuid.UUID          `json:"id"`
-	UserID          string             `json:"user_id"`
-	CategoryID      string             `json:"category_id"`
+	ID              int64              `json:"id"`
+	UserID          int64              `json:"user_id"`
+	CategoryID      *int64             `json:"category_id"`
 	Amount          pgtype.Numeric     `json:"amount"`
 	Description     string             `json:"description"`
 	TransactionDate pgtype.Timestamptz `json:"transaction_date"`
+	Type            string             `json:"type"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 type createTransactionRequest struct {
-	CategoryID      uuid.UUID          `json:"category_id" binding:"required,uuid"`
-	Amount          pgtype.Numeric     `json:"amount" binding:"required"`
-	Description     string             `json:"description"`
-	TransactionDate pgtype.Timestamptz `json:"transaction_date"`
+	CategoryID      *int64 `json:"category_id"`
+	Amount          string `json:"amount" binding:"required"`
+	Description     string `json:"description"`
+	TransactionDate string `json:"transaction_date" binding:"required"`
+	Type            string `json:"type" binding:"required"`
 }
 
 type updateTransactionRequest struct {
-	CategoryID      string             `json:"category_id" binding:"omitempty,uuid"`
-	Amount          pgtype.Numeric     `json:"amount" binding:"omitempty"`
-	Description     string             `json:"description" binding:"omitempty"`
-	TransactionDate pgtype.Timestamptz `json:"transaction_date" binding:"omitempty"`
+	CategoryID      *int64 `json:"category_id"`
+	Amount          string `json:"amount" binding:"omitempty"`
+	Description     string `json:"description" binding:"omitempty"`
+	TransactionDate string `json:"transaction_date" binding:"omitempty"`
+	Type            string `json:"type" binding:"omitempty"`
 }
 
 type listTransactionsRequest struct {
-	PageID   int32 `form:"page_id" binding:"required,min=1"`
-	PageSize int32 `form:"page_size" binding:"required,min=5,max=100"`
+	PageID   int32 `form:"page_id" binding:"min=1"`
+	PageSize int32 `form:"page_size" binding:"min=5,max=100"`
 }
 
-type listTransactionsByUserAndCategoryRequest struct {
-	CategoryID string `uri:"category_id" binding:"required,uuid"`
-	PageID     int32  `form:"page_id" binding:"required,min=1"`
-	PageSize   int32  `form:"page_size" binding:"required,min=5,max=100"`
-}
-
-type listTransactionsByUserInDateRangeRequest struct {
-	StartDate string `form:"start_date" binding:"required"`
-	EndDate   string `form:"end_date" binding:"required"`
-	PageID    int32  `form:"page_id" binding:"required,min=1"`
-	PageSize  int32  `form:"page_size" binding:"required,min=5,max=100"`
-}
-
-func transactionToTransactionResponse(transaction db.Transaction) transactionResponse {
-	return transactionResponse{
-		ID:              util.PgxUUIDToGoogleUUID(transaction.ID),
-		UserID:          util.PgxUUIDToGoogleUUID(transaction.UserID).String(),
-		CategoryID:      util.PgxUUIDToGoogleUUID(transaction.CategoryID).String(),
-		Amount:          transaction.Amount,
-		Description:     transaction.Description.String,
-		TransactionDate: transaction.TransactionDate,
-		CreatedAt:       transaction.CreatedAt,
+func transactionToTransactionResponse(row interface{}) transactionResponse {
+	switch t := row.(type) {
+	case db.CreateTransactionRow:
+		var categoryID *int64
+		if t.CategoryID.Valid {
+			categoryID = &t.CategoryID.Int64
+		}
+		return transactionResponse{
+			ID:              t.ID,
+			UserID:          t.UserID,
+			CategoryID:      categoryID,
+			Amount:          t.Amount,
+			Description:     t.Description.String,
+			TransactionDate: t.TransactionDate,
+			Type:            t.Type,
+			CreatedAt:       t.CreatedAt,
+		}
+	case db.GetTransactionRow:
+		var categoryID *int64
+		if t.CategoryID.Valid {
+			categoryID = &t.CategoryID.Int64
+		}
+		return transactionResponse{
+			ID:              t.ID,
+			UserID:          t.UserID,
+			CategoryID:      categoryID,
+			Amount:          t.Amount,
+			Description:     t.Description.String,
+			TransactionDate: t.TransactionDate,
+			Type:            t.Type,
+			CreatedAt:       pgtype.Timestamptz{},
+		}
+	case db.UpdateTransactionRow:
+		var categoryID *int64
+		if t.CategoryID.Valid {
+			categoryID = &t.CategoryID.Int64
+		}
+		return transactionResponse{
+			ID:              t.ID,
+			UserID:          t.UserID,
+			CategoryID:      categoryID,
+			Amount:          t.Amount,
+			Description:     t.Description.String,
+			TransactionDate: t.TransactionDate,
+			Type:            t.Type,
+			CreatedAt:       pgtype.Timestamptz{},
+		}
+	case db.ListTransactionsRow:
+		var categoryID *int64
+		if t.CategoryID.Valid {
+			categoryID = &t.CategoryID.Int64
+		}
+		return transactionResponse{
+			ID:              t.ID,
+			UserID:          t.UserID,
+			CategoryID:      categoryID,
+			Amount:          t.Amount,
+			Description:     t.Description.String,
+			TransactionDate: t.TransactionDate,
+			Type:            t.Type,
+			CreatedAt:       pgtype.Timestamptz{},
+		}
+	default:
+		return transactionResponse{}
 	}
 }
 
-func transactionsToTransactionResponses(transactions []db.Transaction) []transactionResponse {
+func transactionsToTransactionResponses(transactions []db.ListTransactionsRow) []transactionResponse {
 	var responses []transactionResponse
 	for _, transaction := range transactions {
 		responses = append(responses, transactionToTransactionResponse(transaction))
@@ -79,7 +123,6 @@ func transactionsToTransactionResponses(transactions []db.Transaction) []transac
 }
 
 func (s *Server) createTransaction(ctx *gin.Context) {
-	fmt.Printf("DEBUG: createTransaction called\n")
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {
 		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("authorization required")))
@@ -91,33 +134,66 @@ func (s *Server) createTransaction(ctx *gin.Context) {
 		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("invalid authorization payload")))
 		return
 	}
-	fmt.Printf("DEBUG: authPayload.UserID: %s\n", authPayload.UserID.String())
 
 	var req createTransactionRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		fmt.Printf("DEBUG: Binding error: %v\n", err)
 		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
 		return
 	}
-	fmt.Printf("DEBUG: Request bound: %+v\n", req)
 
-	categoryID := req.CategoryID
+	var categoryID pgtype.Int8
+	if req.CategoryID != nil {
+		categoryID = pgtype.Int8{Int64: *req.CategoryID, Valid: true}
+	}
+
+	var amount pgtype.Numeric
+	if err := amount.Scan(req.Amount); err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid amount format")))
+		return
+	}
+
+	parsedTime, err := time.Parse(time.RFC3339, req.TransactionDate)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid date format, use ISO 8601")))
+		return
+	}
+	transactionDate := pgtype.Timestamptz{Time: parsedTime, Valid: true}
+
+	_, err = s.store.GetUser(ctx, authPayload.UserID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("user not found, please login again")))
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(errors.New("failed to validate user")))
+		return
+	}
 
 	arg := db.CreateTransactionParams{
-		UserID:          util.GoogleUUIDToPgxUUID(authPayload.UserID),
-		CategoryID:      util.GoogleUUIDToPgxUUID(categoryID),
-		Amount:          req.Amount,
+		UserID:          authPayload.UserID,
+		CategoryID:      categoryID,
+		Amount:          amount,
 		Description:     pgtype.Text{String: req.Description, Valid: req.Description != ""},
-		TransactionDate: req.TransactionDate,
+		TransactionDate: transactionDate,
+		Type:            req.Type,
 	}
 
 	transaction, err := s.store.CreateTransaction(ctx, arg)
 	if err != nil {
-		fmt.Printf("DEBUG: Store CreateTransaction error: %v\n", err)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23503":
+				ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("user not found")))
+				return
+			case "23505":
+				ctx.JSON(http.StatusConflict, util.ErrorResponse(errors.New("transaction already exists")))
+				return
+			}
+		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
 	}
-	fmt.Printf("DEBUG: Transaction created: %+v\n", transaction)
 
 	rsp := transactionToTransactionResponse(transaction)
 	ctx.JSON(http.StatusCreated, rsp)
@@ -137,24 +213,22 @@ func (s *Server) getTransactions(ctx *gin.Context) {
 	}
 
 	transactionIDStr := ctx.Param("id")
-	transactionID, err := uuid.Parse(transactionIDStr)
+	transactionID, err := strconv.ParseInt(transactionIDStr, 10, 64)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid transaction ID format")))
 		return
 	}
 
-	transaction, err := s.store.GetTransaction(ctx, util.GoogleUUIDToPgxUUID(transactionID))
+	transaction, err := s.store.GetTransaction(ctx, db.GetTransactionParams{
+		ID:     transactionID,
+		UserID: authPayload.UserID,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			ctx.JSON(http.StatusNotFound, util.ErrorResponse(errors.New("transaction not found")))
 			return
 		}
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
-		return
-	}
-
-	if transaction.UserID != util.GoogleUUIDToPgxUUID(authPayload.UserID) {
-		ctx.JSON(http.StatusForbidden, util.ErrorResponse(errors.New("forbidden: cannot access other user's transaction")))
 		return
 	}
 
@@ -181,102 +255,13 @@ func (s *Server) getTransaction(ctx *gin.Context) {
 		return
 	}
 
-	arg := db.GetTransactionsParams{
-		UserID: util.GoogleUUIDToPgxUUID(authPayload.UserID),
+	arg := db.ListTransactionsParams{
+		UserID: authPayload.UserID,
 		Limit:  req.PageSize,
 		Offset: (req.PageID - 1) * req.PageSize,
 	}
 
-	transactions, err := s.store.GetTransactions(ctx, arg)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
-		return
-	}
-
-	rsp := transactionsToTransactionResponses(transactions)
-	ctx.JSON(http.StatusOK, rsp)
-}
-
-func (s *Server) listTransaction(ctx *gin.Context) {
-	payload, exists := ctx.Get(authorizationPayloadKey)
-	if !exists {
-		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("authorization required")))
-		return
-	}
-
-	authPayload, ok := payload.(*token.Payload)
-	if !ok {
-		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("invalid authorization payload")))
-		return
-	}
-
-	var req listTransactionsRequest
-	if err := ctx.ShouldBindQuery(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
-		return
-	}
-
-	offset := (req.PageID - 1) * req.PageSize
-
-	arg := db.GetTransactionsParams{
-		UserID: util.GoogleUUIDToPgxUUID(authPayload.UserID), // Gunakan UserID dari token
-		Limit:  req.PageSize,
-		Offset: offset,
-	}
-
-	transactions, err := s.store.GetTransactions(ctx, arg)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
-		return
-	}
-
-	rsp := transactionsToTransactionResponses(transactions)
-	ctx.JSON(http.StatusOK, rsp)
-}
-
-func (s *Server) listTrnsactionsByDateRange(ctx *gin.Context) {
-	payload, exists := ctx.Get(authorizationPayloadKey)
-	if !exists {
-		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("authorization required")))
-		return
-	}
-
-	authPayload, ok := payload.(*token.Payload)
-	if !ok {
-		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(errors.New("invalid authorization payload")))
-		return
-	}
-
-	var req listTransactionsByUserInDateRangeRequest
-	if err := ctx.ShouldBindQuery(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(err))
-		return
-	}
-
-	startDate, err := time.Parse("2006-01-02", req.StartDate)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid start date format, expected YYYY-MM-DD")))
-		return
-	}
-	endDate, err := time.Parse("2006-01-02", req.EndDate)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid end date format, expected YYYY-MM-DD")))
-		return
-	}
-
-	// 4. Hitung offset untuk pagination
-	offset := (req.PageID - 1) * req.PageSize
-
-	// 5. Siapkan argumen untuk SQLC
-	arg := db.GetTransactionsByDateRangeParams{
-		UserID:            util.GoogleUUIDToPgxUUID(authPayload.UserID), // Gunakan UserID dari token
-		TransactionDate:   pgtype.Timestamptz{Time: startDate, Valid: true},
-		TransactionDate_2: pgtype.Timestamptz{Time: endDate.Add(24*time.Hour - time.Nanosecond), Valid: true}, // Sertakan akhir hari
-		Limit:             req.PageSize,
-		Offset:            offset,
-	}
-
-	transactions, err := s.store.GetTransactionsByDateRange(ctx, arg)
+	transactions, err := s.store.ListTransactions(ctx, arg)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return
@@ -300,7 +285,7 @@ func (s *Server) updateTransaction(ctx *gin.Context) {
 	}
 
 	transactionIDStr := ctx.Param("id")
-	transactionID, err := uuid.Parse(transactionIDStr)
+	transactionID, err := strconv.ParseInt(transactionIDStr, 10, 64)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid transaction ID format")))
 		return
@@ -312,7 +297,10 @@ func (s *Server) updateTransaction(ctx *gin.Context) {
 		return
 	}
 
-	existingTransaction, err := s.store.GetTransaction(ctx, util.GoogleUUIDToPgxUUID(transactionID))
+	existingTransaction, err := s.store.GetTransaction(ctx, db.GetTransactionParams{
+		ID:     transactionID,
+		UserID: authPayload.UserID,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			ctx.JSON(http.StatusNotFound, util.ErrorResponse(errors.New("transaction not found")))
@@ -322,36 +310,53 @@ func (s *Server) updateTransaction(ctx *gin.Context) {
 		return
 	}
 
-	if existingTransaction.UserID != util.GoogleUUIDToPgxUUID(authPayload.UserID) {
-		ctx.JSON(http.StatusForbidden, util.ErrorResponse(errors.New("forbidden: cannot access other user's transaction")))
-		return
+	var categoryID pgtype.Int8
+	if req.CategoryID != nil {
+		categoryID = pgtype.Int8{Int64: *req.CategoryID, Valid: true}
+	} else {
+		categoryID = existingTransaction.CategoryID
+	}
+
+	var amount pgtype.Numeric
+	if req.Amount != "" {
+		if err := amount.Scan(req.Amount); err != nil {
+			ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid amount format")))
+			return
+		}
+	} else {
+		amount = existingTransaction.Amount
+	}
+
+	var transactionDate pgtype.Timestamptz
+	if req.TransactionDate != "" {
+		parsedTime, err := time.Parse(time.RFC3339, req.TransactionDate)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid date format, use ISO 8601")))
+			return
+		}
+		transactionDate = pgtype.Timestamptz{Time: parsedTime, Valid: true}
+	} else {
+		transactionDate = existingTransaction.TransactionDate
+	}
+
+	description := existingTransaction.Description
+	if req.Description != "" {
+		description = pgtype.Text{String: req.Description, Valid: true}
+	}
+
+	transactionType := existingTransaction.Type
+	if req.Type != "" {
+		transactionType = req.Type
 	}
 
 	arg := db.UpdateTransactionParams{
-		ID:              util.GoogleUUIDToPgxUUID(transactionID),
-		UserID:          util.GoogleUUIDToPgxUUID(authPayload.UserID),
-		CategoryID:      existingTransaction.CategoryID,
-		Amount:          existingTransaction.Amount,
-		Description:     existingTransaction.Description,
-		TransactionDate: existingTransaction.TransactionDate,
-	}
-
-	if req.CategoryID != "" {
-		categoryID, parseErr := uuid.Parse(req.CategoryID)
-		if parseErr != nil {
-			ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid category ID format")))
-			return
-		}
-		arg.CategoryID = util.GoogleUUIDToPgxUUID(categoryID)
-	}
-	if req.Amount != (pgtype.Numeric{}) {
-		arg.Amount = req.Amount
-	}
-	if req.Description != "" {
-		arg.Description = pgtype.Text{String: req.Description, Valid: true}
-	}
-	if req.TransactionDate.Valid {
-		arg.TransactionDate = req.TransactionDate
+		ID:              transactionID,
+		UserID:          authPayload.UserID,
+		CategoryID:      categoryID,
+		Amount:          amount,
+		Description:     description,
+		TransactionDate: transactionDate,
+		Type:            transactionType,
 	}
 
 	updatedTransaction, err := s.store.UpdateTransaction(ctx, arg)
@@ -378,15 +383,18 @@ func (s *Server) deleteTransaction(ctx *gin.Context) {
 	}
 
 	transactionIDStr := ctx.Param("id")
-	transactionID, err := uuid.Parse(transactionIDStr)
+	transactionID, err := strconv.ParseInt(transactionIDStr, 10, 64)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid transaction ID format")))
 		return
 	}
 
-	existingTransaction, err := s.store.GetTransaction(ctx, util.GoogleUUIDToPgxUUID(transactionID))
+	_, err = s.store.GetTransaction(ctx, db.GetTransactionParams{
+		ID:     transactionID,
+		UserID: authPayload.UserID,
+	})
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			ctx.JSON(http.StatusNotFound, util.ErrorResponse(errors.New("transaction not found")))
 			return
 		}
@@ -394,17 +402,10 @@ func (s *Server) deleteTransaction(ctx *gin.Context) {
 		return
 	}
 
-	if existingTransaction.UserID != util.GoogleUUIDToPgxUUID(authPayload.UserID) {
-		ctx.JSON(http.StatusForbidden, util.ErrorResponse(errors.New("forbidden: cannot access other user's transaction")))
-		return
-	}
-
-	arg := db.DeleteTransactionParams{
-		ID:     util.GoogleUUIDToPgxUUID(transactionID),
-		UserID: util.GoogleUUIDToPgxUUID(authPayload.UserID),
-	}
-
-	err = s.store.DeleteTransaction(ctx, arg)
+	err = s.store.DeleteTransaction(ctx, db.DeleteTransactionParams{
+		ID:     transactionID,
+		UserID: authPayload.UserID,
+	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
 		return

@@ -9,13 +9,12 @@ import (
 	"github.com/franklindh/catat/token"
 	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type userResponse struct {
-	ID        uuid.UUID          `json:"id"`
+	ID        int64              `json:"id"`
 	GoogleID  string             `json:"google_id"`
 	Email     string             `json:"email"`
 	Name      string             `json:"name"`
@@ -26,14 +25,11 @@ type userResponse struct {
 }
 
 func newUserResponse(user db.User) userResponse {
-	balanceStr, _ := user.Balance.Value()
-
 	return userResponse{
-		ID:        util.PgxUUIDToGoogleUUID(user.ID),
-		GoogleID:  user.GoogleID,
+		ID:        user.ID,
+		GoogleID:  user.GoogleAuthID.String,
 		Email:     user.Email,
 		Name:      user.Name.String,
-		Balance:   balanceStr.(string),
 		AvatarUrl: user.AvatarUrl.String,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
@@ -53,7 +49,7 @@ func (s *Server) getUser(ctx *gin.Context) {
 		return
 	}
 
-	userID := util.GoogleUUIDToPgxUUID(authPayload.UserID)
+	userID := authPayload.UserID
 
 	user, err := s.store.GetUser(ctx, userID)
 	if err != nil {
@@ -93,7 +89,7 @@ func (s *Server) updateUser(ctx *gin.Context) {
 		return
 	}
 
-	userID := util.GoogleUUIDToPgxUUID(authPayload.UserID)
+	userID := authPayload.UserID
 
 	arg := db.UpdateUserParams{
 		ID:        userID,
@@ -101,7 +97,7 @@ func (s *Server) updateUser(ctx *gin.Context) {
 		AvatarUrl: pgtype.Text{String: req.AvatarUrl, Valid: req.AvatarUrl != ""},
 	}
 
-	err := s.store.UpdateUser(ctx, arg)
+	_, err := s.store.UpdateUser(ctx, arg)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, pgx.ErrNoRows) {
 			ctx.JSON(http.StatusNotFound, util.ErrorResponse(errors.New("user not found to update")))
@@ -127,7 +123,7 @@ func (s *Server) deleteUser(ctx *gin.Context) {
 		return
 	}
 
-	userID := util.GoogleUUIDToPgxUUID(authPayload.UserID)
+	userID := authPayload.UserID
 
 	err := s.store.DeleteUser(ctx, userID)
 	if err != nil {

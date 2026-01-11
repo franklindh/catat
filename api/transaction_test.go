@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -19,25 +20,62 @@ import (
 	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
 	"github.com/golang/mock/gomock"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 )
 
-func randomTransaction(userID, categoryID pgtype.UUID) db.Transaction {
-	return db.Transaction{
-		ID:              util.GoogleUUIDToPgxUUID(uuid.New()),
+func formatNumericToString(n pgtype.Numeric) string {
+	if !n.Valid {
+		return "0"
+	}
+	val, err := n.Value()
+	if err != nil {
+		return "0"
+	}
+	if str, ok := val.(string); ok {
+		return str
+	}
+	if rat, ok := val.(*big.Rat); ok {
+		return rat.FloatString(4)
+	}
+	return "0"
+}
+
+func randomTransaction(userID int64, categoryID *int64) db.CreateTransactionRow {
+	var catID pgtype.Int8
+	if categoryID != nil {
+		catID = pgtype.Int8{Int64: *categoryID, Valid: true}
+	}
+	return db.CreateTransactionRow{
+		ID:              util.RandomInt(1, 1000000),
 		UserID:          userID,
-		CategoryID:      categoryID,
+		CategoryID:      catID,
 		Amount:          util.RandomBalance(),
 		Description:     pgtype.Text{String: util.RandomString(20), Valid: true},
 		TransactionDate: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		Type:            "EXPENSE",
 		CreatedAt:       pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	}
 }
 
-func requireBodyMatchTransaction(t *testing.T, body *bytes.Buffer, transaction db.Transaction) {
+func randomGetTransactionRow(userID int64, categoryID *int64) db.GetTransactionRow {
+	var catID pgtype.Int8
+	if categoryID != nil {
+		catID = pgtype.Int8{Int64: *categoryID, Valid: true}
+	}
+	return db.GetTransactionRow{
+		ID:              util.RandomInt(1, 1000000),
+		UserID:          userID,
+		CategoryID:      catID,
+		Amount:          util.RandomBalance(),
+		Description:     pgtype.Text{String: util.RandomString(20), Valid: true},
+		TransactionDate: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		Type:            "EXPENSE",
+	}
+}
+
+func requireBodyMatchTransaction(t *testing.T, body *bytes.Buffer, transactionID int64, userID int64, categoryID *int64, amount pgtype.Numeric, description string, transactionDate pgtype.Timestamptz, transactionType string) {
 	data, err := io.ReadAll(body)
 	require.NoError(t, err)
 
@@ -45,21 +83,35 @@ func requireBodyMatchTransaction(t *testing.T, body *bytes.Buffer, transaction d
 	err = json.Unmarshal(data, &gotTransaction)
 	require.NoError(t, err)
 
-	require.Equal(t, util.PgxUUIDToGoogleUUID(transaction.ID), gotTransaction.ID)
-	require.Equal(t, util.PgxUUIDToGoogleUUID(transaction.UserID).String(), gotTransaction.UserID)
-	require.Equal(t, util.PgxUUIDToGoogleUUID(transaction.CategoryID).String(), gotTransaction.CategoryID)
+	require.Equal(t, transactionID, gotTransaction.ID)
+	require.Equal(t, userID, gotTransaction.UserID)
+	if categoryID != nil {
+		require.NotNil(t, gotTransaction.CategoryID)
+		require.Equal(t, *categoryID, *gotTransaction.CategoryID)
+	} else {
+		require.Nil(t, gotTransaction.CategoryID)
+	}
 
-	transAmountRat, _ := transaction.Amount.Value()
+	transAmountRat, _ := amount.Value()
 	gotAmountRat, _ := gotTransaction.Amount.Value()
-	require.Equal(t, 0, transAmountRat.(*big.Rat).Cmp(gotAmountRat.(*big.Rat)), "Amount values should be numerically equal")
-	require.Equal(t, transaction.Description.String, gotTransaction.Description)
+	if transRat, ok := transAmountRat.(*big.Rat); ok {
+		if gotRat, ok := gotAmountRat.(*big.Rat); ok {
+			require.Equal(t, 0, transRat.Cmp(gotRat), "Amount values should be numerically equal")
+		} else if gotStr, ok := gotAmountRat.(string); ok {
 
-	require.WithinDuration(t, transaction.TransactionDate.Time, gotTransaction.TransactionDate.Time, time.Microsecond)
+			gotRat, _, _ := big.ParseFloat(gotStr, 10, 0, big.ToNearestEven)
+			transFloat, _ := new(big.Float).SetRat(transRat).Float64()
+			gotFloat, _ := gotRat.Float64()
+			require.InDelta(t, transFloat, gotFloat, 0.0001, "Amount values should be numerically equal")
+		}
+	}
+	require.Equal(t, description, gotTransaction.Description)
+	require.Equal(t, transactionType, gotTransaction.Type)
 
-	require.WithinDuration(t, transaction.CreatedAt.Time, gotTransaction.CreatedAt.Time, time.Second)
+	require.WithinDuration(t, transactionDate.Time, gotTransaction.TransactionDate.Time, time.Microsecond)
 }
 
-func requireBodyMatchTransactions(t *testing.T, body *bytes.Buffer, transactions []db.Transaction) {
+func requireBodyMatchTransactions(t *testing.T, body *bytes.Buffer, transactions []db.ListTransactionsRow) {
 	data, err := io.ReadAll(body)
 	require.NoError(t, err)
 
@@ -69,23 +121,39 @@ func requireBodyMatchTransactions(t *testing.T, body *bytes.Buffer, transactions
 	require.Len(t, gotTransactions, len(transactions))
 
 	for i := range transactions {
-		require.Equal(t, util.PgxUUIDToGoogleUUID(transactions[i].ID), gotTransactions[i].ID)
-		require.Equal(t, util.PgxUUIDToGoogleUUID(transactions[i].UserID).String(), gotTransactions[i].UserID)
-		require.Equal(t, util.PgxUUIDToGoogleUUID(transactions[i].CategoryID).String(), gotTransactions[i].CategoryID)
+		require.Equal(t, transactions[i].ID, gotTransactions[i].ID)
+		require.Equal(t, transactions[i].UserID, gotTransactions[i].UserID)
+		if transactions[i].CategoryID.Valid {
+			require.NotNil(t, gotTransactions[i].CategoryID)
+			require.Equal(t, transactions[i].CategoryID.Int64, *gotTransactions[i].CategoryID)
+		} else {
+			require.Nil(t, gotTransactions[i].CategoryID)
+		}
+
 		transAmountRat, _ := transactions[i].Amount.Value()
 		gotAmountRat, _ := gotTransactions[i].Amount.Value()
-		require.Equal(t, 0, transAmountRat.(*big.Rat).Cmp(gotAmountRat.(*big.Rat)), "Amount values should be numerically equal for item %d", i)
-		require.Equal(t, transactions[i].Description.String, gotTransactions[i].Description)
-		require.WithinDuration(t, transactions[i].TransactionDate.Time, gotTransactions[i].TransactionDate.Time, time.Microsecond)
+		if transRat, ok := transAmountRat.(*big.Rat); ok {
+			if gotRat, ok := gotAmountRat.(*big.Rat); ok {
+				require.Equal(t, 0, transRat.Cmp(gotRat), "Amount values should be numerically equal for item %d", i)
+			} else if gotStr, ok := gotAmountRat.(string); ok {
 
-		require.WithinDuration(t, transactions[i].CreatedAt.Time, gotTransactions[i].CreatedAt.Time, time.Second)
+				gotRat, _, _ := big.ParseFloat(gotStr, 10, 0, big.ToNearestEven)
+				transFloat, _ := new(big.Float).SetRat(transRat).Float64()
+				gotFloat, _ := gotRat.Float64()
+				require.InDelta(t, transFloat, gotFloat, 0.0001, "Amount values should be numerically equal for item %d", i)
+			}
+		}
+		require.Equal(t, transactions[i].Description.String, gotTransactions[i].Description)
+		require.Equal(t, transactions[i].Type, gotTransactions[i].Type)
+		require.WithinDuration(t, transactions[i].TransactionDate.Time, gotTransactions[i].TransactionDate.Time, time.Microsecond)
 	}
 }
 
 func TestCreateTransactionAPI(t *testing.T) {
 	user := randomUser()
 	category := randomCategory(user.ID)
-	transaction := randomTransaction(user.ID, category.ID)
+	categoryID := category.ID
+	transaction := randomTransaction(user.ID, &categoryID)
 
 	testCases := []struct {
 		name          string
@@ -97,50 +165,67 @@ func TestCreateTransactionAPI(t *testing.T) {
 		{
 			name: "OK",
 			body: gin.H{
-				"category_id":      util.PgxUUIDToGoogleUUID(category.ID).String(),
-				"amount":           transaction.Amount,
+				"category_id":      categoryID,
+				"amount":           formatNumericToString(transaction.Amount),
 				"description":      transaction.Description.String,
-				"transaction_date": transaction.TransactionDate,
+				"transaction_date": transaction.TransactionDate.Time.Format(time.RFC3339),
+				"type":             transaction.Type,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetUser(gomock.Any(), user.ID).
+					Times(1).
+					Return(user, nil)
 
 				store.EXPECT().
 					CreateTransaction(gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, arg db.CreateTransactionParams) (db.Transaction, error) {
-
+					DoAndReturn(func(ctx context.Context, arg db.CreateTransactionParams) (db.CreateTransactionRow, error) {
 						require.Equal(t, user.ID, arg.UserID)
-						require.Equal(t, category.ID, arg.CategoryID)
+						require.True(t, arg.CategoryID.Valid)
+						require.Equal(t, categoryID, arg.CategoryID.Int64)
 
 						argAmountRat, _ := arg.Amount.Value()
 						transAmountRat, _ := transaction.Amount.Value()
-						require.Equal(t, 0, argAmountRat.(*big.Rat).Cmp(transAmountRat.(*big.Rat)), "Amount values should be numerically equal")
-						require.Equal(t, transaction.Description, arg.Description)
+						if argRat, ok := argAmountRat.(*big.Rat); ok {
+							if transRat, ok := transAmountRat.(*big.Rat); ok {
+								require.Equal(t, 0, argRat.Cmp(transRat), "Amount values should be numerically equal")
+							}
+						} else {
 
-						require.WithinDuration(t, transaction.TransactionDate.Time, arg.TransactionDate.Time, time.Microsecond)
+							require.True(t, arg.Amount.Valid == transaction.Amount.Valid)
+						}
+						require.Equal(t, transaction.Description, arg.Description)
+						require.Equal(t, transaction.Type, arg.Type)
+
+						require.WithinDuration(t, transaction.TransactionDate.Time, arg.TransactionDate.Time, time.Second)
 						return transaction, nil
 					}).
 					Times(1)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusCreated, recorder.Code)
-				requireBodyMatchTransaction(t, recorder.Body, transaction)
+				requireBodyMatchTransaction(t, recorder.Body, transaction.ID, transaction.UserID, &categoryID, transaction.Amount, transaction.Description.String, transaction.TransactionDate, transaction.Type)
 			},
 		},
 		{
 			name: "NoAuthorization",
 			body: gin.H{
-				"category_id":      util.PgxUUIDToGoogleUUID(category.ID).String(),
-				"amount":           transaction.Amount,
+				"category_id":      categoryID,
+				"amount":           formatNumericToString(transaction.Amount),
 				"description":      transaction.Description.String,
-				"transaction_date": transaction.TransactionDate,
+				"transaction_date": transaction.TransactionDate.Time.Format(time.RFC3339),
+				"type":             transaction.Type,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 
 			},
 			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetUser(gomock.Any(), gomock.Any()).
+					Times(0)
 				store.EXPECT().
 					CreateTransaction(gomock.Any(), gomock.Any()).
 					Times(0)
@@ -152,33 +237,42 @@ func TestCreateTransactionAPI(t *testing.T) {
 		{
 			name: "InternalError",
 			body: gin.H{
-				"category_id":      util.PgxUUIDToGoogleUUID(category.ID).String(),
-				"amount":           transaction.Amount,
+				"category_id":      categoryID,
+				"amount":           formatNumericToString(transaction.Amount),
 				"description":      transaction.Description.String,
-				"transaction_date": transaction.TransactionDate,
+				"transaction_date": transaction.TransactionDate.Time.Format(time.RFC3339),
+				"type":             transaction.Type,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
+					GetUser(gomock.Any(), user.ID).
+					Times(1).
+					Return(user, nil)
+
+				store.EXPECT().
 					CreateTransaction(gomock.Any(), gomock.Any()).
 					Times(1).
-					Return(db.Transaction{}, sql.ErrConnDone)
+					Return(db.CreateTransactionRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
 			},
 		},
 		{
-			name: "InvalidCategoryID",
+			name: "InvalidAmount",
 			body: gin.H{
-				"category_id": "invalid-uuid",
+				"amount": "invalid",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetUser(gomock.Any(), gomock.Any()).
+					Times(0)
 				store.EXPECT().
 					CreateTransaction(gomock.Any(), gomock.Any()).
 					Times(0)
@@ -218,8 +312,10 @@ func TestCreateTransactionAPI(t *testing.T) {
 
 func TestGetTransactionAPI(t *testing.T) {
 	user := randomUser()
+	otherUser := randomUser()
 	category := randomCategory(user.ID)
-	transaction := randomTransaction(user.ID, category.ID)
+	categoryID := category.ID
+	transaction := randomGetTransactionRow(user.ID, &categoryID)
 
 	testCases := []struct {
 		name          string
@@ -230,24 +326,31 @@ func TestGetTransactionAPI(t *testing.T) {
 	}{
 		{
 			name:          "OK",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: user.ID,
+					}).
 					Times(1).
 					Return(transaction, nil)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
-				requireBodyMatchTransaction(t, recorder.Body, transaction)
+				var catID *int64
+				if transaction.CategoryID.Valid {
+					catID = &transaction.CategoryID.Int64
+				}
+				requireBodyMatchTransaction(t, recorder.Body, transaction.ID, transaction.UserID, catID, transaction.Amount, transaction.Description.String, transaction.TransactionDate, transaction.Type)
 			},
 		},
 		{
 			name:          "NoAuthorization",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 
 			},
@@ -262,15 +365,18 @@ func TestGetTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "NotFound",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: user.ID,
+					}).
 					Times(1).
-					Return(db.Transaction{}, pgx.ErrNoRows)
+					Return(db.GetTransactionRow{}, pgx.ErrNoRows)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusNotFound, recorder.Code)
@@ -278,33 +384,37 @@ func TestGetTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "Forbidden",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
-
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: otherUser.ID,
+					}).
 					Times(1).
-					Return(transaction, nil)
+					Return(db.GetTransactionRow{}, pgx.ErrNoRows)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusForbidden, recorder.Code)
+				require.Equal(t, http.StatusNotFound, recorder.Code)
 			},
 		},
 		{
 			name:          "InternalError",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: user.ID,
+					}).
 					Times(1).
-					Return(db.Transaction{}, sql.ErrConnDone)
+					Return(db.GetTransactionRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -312,9 +422,9 @@ func TestGetTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "InvalidID",
-			transactionID: "invalid-uuid",
+			transactionID: "invalid-id",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -354,10 +464,19 @@ func TestGetTransactionAPI(t *testing.T) {
 func TestListTransactionsAPI(t *testing.T) {
 	user := randomUser()
 	n := 5
-	transactions := make([]db.Transaction, n)
+	transactions := make([]db.ListTransactionsRow, n)
 	for i := 0; i < n; i++ {
 		category := randomCategory(user.ID)
-		transactions[i] = randomTransaction(user.ID, category.ID)
+		categoryID := category.ID
+		transactions[i] = db.ListTransactionsRow{
+			ID:              util.RandomInt(1, 1000000),
+			UserID:          user.ID,
+			CategoryID:      pgtype.Int8{Int64: categoryID, Valid: true},
+			Amount:          util.RandomBalance(),
+			Description:     pgtype.Text{String: util.RandomString(20), Valid: true},
+			TransactionDate: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			Type:            "EXPENSE",
+		}
 	}
 
 	type Query struct {
@@ -379,16 +498,16 @@ func TestListTransactionsAPI(t *testing.T) {
 				page_size: int32(n),
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
-				arg := db.GetTransactionsParams{
+				arg := db.ListTransactionsParams{
 					UserID: user.ID,
 					Limit:  int32(n),
 					Offset: 0,
 				}
 				store.EXPECT().
-					GetTransactions(gomock.Any(), gomock.Eq(arg)).
+					ListTransactions(gomock.Any(), gomock.Eq(arg)).
 					Times(1).
 					Return(transactions, nil)
 			},
@@ -408,7 +527,7 @@ func TestListTransactionsAPI(t *testing.T) {
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
-					GetTransactions(gomock.Any(), gomock.Any()).
+					ListTransactions(gomock.Any(), gomock.Any()).
 					Times(0)
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
@@ -422,18 +541,18 @@ func TestListTransactionsAPI(t *testing.T) {
 				page_size: int32(n),
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
-				arg := db.GetTransactionsParams{
+				arg := db.ListTransactionsParams{
 					UserID: user.ID,
 					Limit:  int32(n),
 					Offset: 0,
 				}
 				store.EXPECT().
-					GetTransactions(gomock.Any(), gomock.Eq(arg)).
+					ListTransactions(gomock.Any(), gomock.Eq(arg)).
 					Times(1).
-					Return([]db.Transaction{}, sql.ErrConnDone)
+					Return([]db.ListTransactionsRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -446,11 +565,11 @@ func TestListTransactionsAPI(t *testing.T) {
 				page_size: int32(n),
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
-					GetTransactions(gomock.Any(), gomock.Any()).
+					ListTransactions(gomock.Any(), gomock.Any()).
 					Times(0)
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
@@ -464,11 +583,11 @@ func TestListTransactionsAPI(t *testing.T) {
 				page_size: 101,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
-					GetTransactions(gomock.Any(), gomock.Any()).
+					ListTransactions(gomock.Any(), gomock.Any()).
 					Times(0)
 			},
 			checkResponse: func(recorder *httptest.ResponseRecorder) {
@@ -490,7 +609,7 @@ func TestListTransactionsAPI(t *testing.T) {
 			server := newTestServer(t, store)
 			recorder := httptest.NewRecorder()
 
-			url := "/transactions"
+			url := "/transaction"
 			request, err := http.NewRequest(http.MethodGet, url, nil)
 			require.NoError(t, err)
 
@@ -508,12 +627,21 @@ func TestListTransactionsAPI(t *testing.T) {
 
 func TestUpdateTransactionAPI(t *testing.T) {
 	user := randomUser()
+	otherUser := randomUser()
 	category1 := randomCategory(user.ID)
 	category2 := randomCategory(user.ID)
-	transaction := randomTransaction(user.ID, category1.ID)
-	updatedTransaction := transaction
-	updatedTransaction.CategoryID = category2.ID
-	updatedTransaction.Description = pgtype.Text{String: "Updated Description", Valid: true}
+	category1ID := category1.ID
+	category2ID := category2.ID
+	transaction := randomGetTransactionRow(user.ID, &category1ID)
+	updatedTransaction := db.UpdateTransactionRow{
+		ID:              transaction.ID,
+		UserID:          transaction.UserID,
+		CategoryID:      pgtype.Int8{Int64: category2ID, Valid: true},
+		Amount:          transaction.Amount,
+		Description:     pgtype.Text{String: "Updated Description", Valid: true},
+		TransactionDate: transaction.TransactionDate,
+		Type:            transaction.Type,
+	}
 
 	testCases := []struct {
 		name          string
@@ -525,28 +653,30 @@ func TestUpdateTransactionAPI(t *testing.T) {
 	}{
 		{
 			name:          "OK",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			body: gin.H{
-				"category_id": util.PgxUUIDToGoogleUUID(category2.ID).String(),
+				"category_id": category2ID,
 				"description": updatedTransaction.Description.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
-
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: user.ID,
+					}).
 					Times(1).
 					Return(transaction, nil)
 
 				store.EXPECT().
 					UpdateTransaction(gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, arg db.UpdateTransactionParams) (db.Transaction, error) {
-
+					DoAndReturn(func(ctx context.Context, arg db.UpdateTransactionParams) (db.UpdateTransactionRow, error) {
 						require.Equal(t, transaction.ID, arg.ID)
 						require.Equal(t, user.ID, arg.UserID)
-						require.Equal(t, category2.ID, arg.CategoryID)
+						require.True(t, arg.CategoryID.Valid)
+						require.Equal(t, category2ID, arg.CategoryID.Int64)
 						require.Equal(t, transaction.Amount, arg.Amount)
 						require.Equal(t, updatedTransaction.Description, arg.Description)
 						require.Equal(t, transaction.TransactionDate, arg.TransactionDate)
@@ -556,12 +686,16 @@ func TestUpdateTransactionAPI(t *testing.T) {
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
-				requireBodyMatchTransaction(t, recorder.Body, updatedTransaction)
+				var catID *int64
+				if updatedTransaction.CategoryID.Valid {
+					catID = &updatedTransaction.CategoryID.Int64
+				}
+				requireBodyMatchTransaction(t, recorder.Body, updatedTransaction.ID, updatedTransaction.UserID, catID, updatedTransaction.Amount, updatedTransaction.Description.String, updatedTransaction.TransactionDate, updatedTransaction.Type)
 			},
 		},
 		{
 			name:          "NoAuthorization",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			body: gin.H{
 				"description": "Updated Description",
 			},
@@ -582,19 +716,21 @@ func TestUpdateTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "NotFound",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			body: gin.H{
 				"description": "Updated Description",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
-
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: user.ID,
+					}).
 					Times(1).
-					Return(db.Transaction{}, pgx.ErrNoRows)
+					Return(db.GetTransactionRow{}, pgx.ErrNoRows)
 				store.EXPECT().
 					UpdateTransaction(gomock.Any(), gomock.Any()).
 					Times(0)
@@ -605,43 +741,46 @@ func TestUpdateTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "Forbidden",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			body: gin.H{
 				"description": "Updated Description",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-
-				otherUser := randomUser()
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(otherUser.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
-
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: otherUser.ID,
+					}).
 					Times(1).
-					Return(transaction, nil)
+					Return(db.GetTransactionRow{}, pgx.ErrNoRows)
 				store.EXPECT().
 					UpdateTransaction(gomock.Any(), gomock.Any()).
 					Times(0)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusForbidden, recorder.Code)
+				require.Equal(t, http.StatusNotFound, recorder.Code)
 			},
 		},
 		{
 			name:          "InternalErrorOnGet",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			body: gin.H{
 				"description": "Updated Description",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: user.ID,
+					}).
 					Times(1).
-					Return(db.Transaction{}, sql.ErrConnDone)
+					Return(db.GetTransactionRow{}, sql.ErrConnDone)
 				store.EXPECT().
 					UpdateTransaction(gomock.Any(), gomock.Any()).
 					Times(0)
@@ -652,24 +791,25 @@ func TestUpdateTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "InternalErrorOnUpdate",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			body: gin.H{
 				"description": "Updated Description",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
-
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: user.ID,
+					}).
 					Times(1).
 					Return(transaction, nil)
-
 				store.EXPECT().
 					UpdateTransaction(gomock.Any(), gomock.Any()).
 					Times(1).
-					Return(db.Transaction{}, sql.ErrConnDone)
+					Return(db.UpdateTransactionRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -677,12 +817,12 @@ func TestUpdateTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "InvalidID",
-			transactionID: "invalid-uuid",
+			transactionID: "invalid-id",
 			body: gin.H{
 				"description": "Updated Description",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -727,8 +867,10 @@ func TestUpdateTransactionAPI(t *testing.T) {
 
 func TestDeleteTransactionAPI(t *testing.T) {
 	user := randomUser()
+	otherUser := randomUser()
 	category := randomCategory(user.ID)
-	transaction := randomTransaction(user.ID, category.ID)
+	categoryID := category.ID
+	transaction := randomGetTransactionRow(user.ID, &categoryID)
 
 	testCases := []struct {
 		name          string
@@ -739,14 +881,16 @@ func TestDeleteTransactionAPI(t *testing.T) {
 	}{
 		{
 			name:          "OK",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
-
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: user.ID,
+					}).
 					Times(1).
 					Return(transaction, nil)
 
@@ -770,7 +914,7 @@ func TestDeleteTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "NoAuthorization",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 
 			},
@@ -788,16 +932,18 @@ func TestDeleteTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "NotFoundOnGet",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
-
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: user.ID,
+					}).
 					Times(1).
-					Return(db.Transaction{}, pgx.ErrNoRows)
+					Return(db.GetTransactionRow{}, pgx.ErrNoRows)
 				store.EXPECT().
 					DeleteTransaction(gomock.Any(), gomock.Any()).
 					Times(0)
@@ -808,36 +954,40 @@ func TestDeleteTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "Forbidden",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
-
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: otherUser.ID,
+					}).
 					Times(1).
-					Return(transaction, nil)
+					Return(db.GetTransactionRow{}, pgx.ErrNoRows)
 				store.EXPECT().
 					DeleteTransaction(gomock.Any(), gomock.Any()).
 					Times(0)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
-				require.Equal(t, http.StatusForbidden, recorder.Code)
+				require.Equal(t, http.StatusNotFound, recorder.Code)
 			},
 		},
 		{
 			name:          "InternalErrorOnGet",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: user.ID,
+					}).
 					Times(1).
-					Return(db.Transaction{}, sql.ErrConnDone)
+					Return(db.GetTransactionRow{}, sql.ErrConnDone)
 				store.EXPECT().
 					DeleteTransaction(gomock.Any(), gomock.Any()).
 					Times(0)
@@ -848,14 +998,16 @@ func TestDeleteTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "InternalErrorOnDelete",
-			transactionID: util.PgxUUIDToGoogleUUID(transaction.ID).String(),
+			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
-
 				store.EXPECT().
-					GetTransaction(gomock.Any(), transaction.ID).
+					GetTransaction(gomock.Any(), db.GetTransactionParams{
+						ID:     transaction.ID,
+						UserID: user.ID,
+					}).
 					Times(1).
 					Return(transaction, nil)
 
@@ -874,9 +1026,9 @@ func TestDeleteTransactionAPI(t *testing.T) {
 		},
 		{
 			name:          "InvalidID",
-			transactionID: "invalid-uuid",
+			transactionID: "invalid-id",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().

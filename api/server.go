@@ -1,4 +1,3 @@
-// api/server.go
 package api
 
 import (
@@ -56,7 +55,7 @@ func NewServer(config util.Config, store db.Store) (*Server, error) {
 }
 
 func (s *Server) setupRoutes() {
-	// Public routes
+
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
@@ -71,15 +70,12 @@ func (s *Server) setupRoutes() {
 		})
 	})
 
-	// User registration/login routes
 	s.router.GET("/users/google/login", s.googleOAuthLogin)
 	s.router.GET("/users/google/callback", s.googleOAuthCallback)
 	s.router.POST("/users/google/callback", s.googleOAuthCallback)
 
-	// Public user routes
 	s.router.GET("/users/:id", s.getUser)
 
-	// Protected routes - need authentication
 	authRoutes := s.router.Group("/").Use(authMiddleware(s.tokenMaker))
 	{
 		authRoutes.POST("/categories", s.createCategory)
@@ -88,14 +84,13 @@ func (s *Server) setupRoutes() {
 		authRoutes.PUT("/categories/:id", s.updateCategory)
 		authRoutes.DELETE("/categories/:id", s.deleteCategory)
 
-		// Transaction routes
 		authRoutes.POST("/transactions", s.createTransaction)
+		authRoutes.GET("/transactions/:id", s.getTransactions)
 		authRoutes.GET("/transaction", s.getTransaction)
 
 		authRoutes.PUT("/transactions/:id", s.updateTransaction)
 		authRoutes.DELETE("/transactions/:id", s.deleteTransaction)
 
-		// Protected user routes
 		authRoutes.GET("/user", s.getUser)
 		authRoutes.PUT("/user", s.updateUser)
 		authRoutes.DELETE("/user", s.deleteUser)

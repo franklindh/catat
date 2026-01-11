@@ -18,7 +18,6 @@ import (
 	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
 	"github.com/golang/mock/gomock"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 )
@@ -41,19 +40,21 @@ func TestCreateCategoryAPI(t *testing.T) {
 				"icon_url": category.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				expectedArg := db.CreateCategoryParams{
 					UserID:  user.ID,
 					Name:    category.Name,
+					Type:    category.Type,
 					IconUrl: category.IconUrl,
 				}
 				store.EXPECT().
 					CreateCategory(gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, arg db.CreateCategoryParams) (db.Category, error) {
+					DoAndReturn(func(ctx context.Context, arg db.CreateCategoryParams) (db.CreateCategoryRow, error) {
 						require.Equal(t, expectedArg.UserID, arg.UserID)
 						require.Equal(t, expectedArg.Name, arg.Name)
+						require.Equal(t, expectedArg.Type, arg.Type)
 						require.Equal(t, expectedArg.IconUrl, arg.IconUrl)
 						return category, nil
 					}).
@@ -89,14 +90,14 @@ func TestCreateCategoryAPI(t *testing.T) {
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 
-				userIDForAuth := util.PgxUUIDToGoogleUUID(user.ID)
+				userIDForAuth := user.ID
 				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					CreateCategory(gomock.Any(), gomock.Any()).
 					Times(1).
-					Return(db.Category{}, sql.ErrConnDone)
+					Return(db.CreateCategoryRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -109,7 +110,7 @@ func TestCreateCategoryAPI(t *testing.T) {
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 
-				userIDForAuth := util.PgxUUIDToGoogleUUID(user.ID)
+				userIDForAuth := user.ID
 				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
@@ -153,9 +154,9 @@ func TestCreateCategoryAPI(t *testing.T) {
 func TestGetCategoriesAPI(t *testing.T) {
 	n := 5
 	user := randomUser()
-	categories := make([]db.Category, n)
+	categories := make([]db.GetCategoriesByUserRow, n)
 	for i := 0; i < n; i++ {
-		categories[i] = randomCategory(user.ID)
+		categories[i] = randomGetCategoriesByUserRow(user.ID)
 	}
 
 	testCases := []struct {
@@ -167,11 +168,15 @@ func TestGetCategoriesAPI(t *testing.T) {
 		{
 			name: "OK",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
+				arg := db.GetCategoriesByUserParams{
+					UserID: user.ID,
+					Type:   "EXPENSE",
+				}
 				store.EXPECT().
-					GetCategoriesByUser(gomock.Any(), user.ID).
+					GetCategoriesByUser(gomock.Any(), gomock.Eq(arg)).
 					Times(1).
 					Return(categories, nil)
 			},
@@ -196,29 +201,37 @@ func TestGetCategoriesAPI(t *testing.T) {
 		{
 			name: "NotFound",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
+				arg := db.GetCategoriesByUserParams{
+					UserID: user.ID,
+					Type:   "EXPENSE",
+				}
 				store.EXPECT().
-					GetCategoriesByUser(gomock.Any(), user.ID).
+					GetCategoriesByUser(gomock.Any(), gomock.Eq(arg)).
 					Times(1).
-					Return([]db.Category{}, sql.ErrNoRows)
+					Return([]db.GetCategoriesByUserRow{}, sql.ErrNoRows)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
-				requireBodyMatchCategories(t, recorder.Body, []db.Category{})
+				requireBodyMatchCategories(t, recorder.Body, []db.GetCategoriesByUserRow{})
 			},
 		},
 		{
 			name: "InternalError",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
+				arg := db.GetCategoriesByUserParams{
+					UserID: user.ID,
+					Type:   "EXPENSE",
+				}
 				store.EXPECT().
-					GetCategoriesByUser(gomock.Any(), user.ID).
+					GetCategoriesByUser(gomock.Any(), gomock.Eq(arg)).
 					Times(1).
-					Return([]db.Category{}, sql.ErrConnDone)
+					Return([]db.GetCategoriesByUserRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -263,15 +276,15 @@ func TestGetCategoryByIDAPI(t *testing.T) {
 	}{
 		{
 			name:       "OK",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(category, nil)
+					Return(categoryToGetCategoryRow(category), nil)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
@@ -280,7 +293,7 @@ func TestGetCategoryByIDAPI(t *testing.T) {
 		},
 		{
 			name:       "NoAuthorization",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 			},
 			buildStubs: func(store *mockdb.MockStore) {
@@ -296,7 +309,7 @@ func TestGetCategoryByIDAPI(t *testing.T) {
 			name:       "InvalidID",
 			categoryID: "invalid-uuid",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -309,15 +322,15 @@ func TestGetCategoryByIDAPI(t *testing.T) {
 		},
 		{
 			name:       "NotFound",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(db.Category{}, sql.ErrNoRows)
+					Return(db.GetCategoryRow{}, sql.ErrNoRows)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusNotFound, recorder.Code)
@@ -325,16 +338,16 @@ func TestGetCategoryByIDAPI(t *testing.T) {
 		},
 		{
 			name:       "Forbidden",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 				otherUser := randomUser()
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(otherUser.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(category, nil)
+					Return(categoryToGetCategoryRow(category), nil)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusForbidden, recorder.Code)
@@ -342,15 +355,15 @@ func TestGetCategoryByIDAPI(t *testing.T) {
 		},
 		{
 			name:       "InternalError",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(db.Category{}, sql.ErrConnDone)
+					Return(db.GetCategoryRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -399,19 +412,19 @@ func TestUpdateCategoryAPI(t *testing.T) {
 	}{
 		{
 			name:       "OK",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			body: gin.H{
 				"name":     updatedCategory.Name,
 				"icon_url": updatedCategory.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(category, nil)
+					Return(categoryToGetCategoryRow(category), nil)
 
 				expectedArg := db.UpdateCategoryParams{
 					ID:      category.ID,
@@ -419,25 +432,43 @@ func TestUpdateCategoryAPI(t *testing.T) {
 					IconUrl: updatedCategory.IconUrl,
 					UserID:  user.ID,
 				}
+				updatedCategoryRow := db.UpdateCategoryRow{
+					ID:        category.ID,
+					UserID:    user.ID,
+					Name:      updatedCategory.Name,
+					Type:      category.Type,
+					IconUrl:   updatedCategory.IconUrl,
+					CreatedAt: category.CreatedAt,
+					UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+				}
 				store.EXPECT().
 					UpdateCategory(gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, arg db.UpdateCategoryParams) (db.Category, error) {
+					DoAndReturn(func(ctx context.Context, arg db.UpdateCategoryParams) (db.UpdateCategoryRow, error) {
 						require.Equal(t, expectedArg.ID, arg.ID)
 						require.Equal(t, expectedArg.Name, arg.Name)
 						require.Equal(t, expectedArg.IconUrl, arg.IconUrl)
 						require.Equal(t, expectedArg.UserID, arg.UserID)
-						return updatedCategory, nil
+						return updatedCategoryRow, nil
 					}).
 					Times(1)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
-				requireBodyMatchCategory(t, recorder.Body, updatedCategory)
+				updatedCategoryRow := db.UpdateCategoryRow{
+					ID:        category.ID,
+					UserID:    user.ID,
+					Name:      updatedCategory.Name,
+					Type:      category.Type,
+					IconUrl:   updatedCategory.IconUrl,
+					CreatedAt: category.CreatedAt,
+					UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+				}
+				requireBodyMatchCategory(t, recorder.Body, updatedCategoryRow)
 			},
 		},
 		{
 			name:       "NoAuthorization",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			body: gin.H{
 				"name":     updatedCategory.Name,
 				"icon_url": updatedCategory.IconUrl.String,
@@ -461,7 +492,7 @@ func TestUpdateCategoryAPI(t *testing.T) {
 				"icon_url": updatedCategory.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -474,13 +505,13 @@ func TestUpdateCategoryAPI(t *testing.T) {
 		},
 		{
 			name:       "MissingName",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			body: gin.H{
 				"icon_url": updatedCategory.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 
-				userIDForAuth := util.PgxUUIDToGoogleUUID(user.ID)
+				userIDForAuth := user.ID
 				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
@@ -494,19 +525,19 @@ func TestUpdateCategoryAPI(t *testing.T) {
 		},
 		{
 			name:       "NotFound",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			body: gin.H{
 				"name":     updatedCategory.Name,
 				"icon_url": updatedCategory.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(db.Category{}, sql.ErrNoRows)
+					Return(db.GetCategoryRow{}, sql.ErrNoRows)
 
 				store.EXPECT().
 					UpdateCategory(gomock.Any(), gomock.Any()).
@@ -518,20 +549,20 @@ func TestUpdateCategoryAPI(t *testing.T) {
 		},
 		{
 			name:       "Forbidden",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			body: gin.H{
 				"name":     updatedCategory.Name,
 				"icon_url": updatedCategory.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 				otherUser := randomUser()
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(otherUser.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(category, nil)
+					Return(categoryToGetCategoryRow(category), nil)
 
 				store.EXPECT().
 					UpdateCategory(gomock.Any(), gomock.Any()).
@@ -543,25 +574,25 @@ func TestUpdateCategoryAPI(t *testing.T) {
 		},
 		{
 			name:       "InternalError",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			body: gin.H{
 				"name":     updatedCategory.Name,
 				"icon_url": updatedCategory.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(category, nil)
+					Return(categoryToGetCategoryRow(category), nil)
 
 				store.EXPECT().
 					UpdateCategory(gomock.Any(), gomock.Any()).
 					Times(1).
-					Return(db.Category{}, sql.ErrConnDone)
+					Return(db.UpdateCategoryRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -609,15 +640,15 @@ func TestDeleteCategoryAPI(t *testing.T) {
 	}{
 		{
 			name:       "OK",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(category, nil)
+					Return(categoryToGetCategoryRow(category), nil)
 
 				expectedArg := db.DeleteCategoryParams{
 					ID:     category.ID,
@@ -643,7 +674,7 @@ func TestDeleteCategoryAPI(t *testing.T) {
 		},
 		{
 			name:       "NoAuthorization",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 			},
 			buildStubs: func(store *mockdb.MockStore) {
@@ -659,7 +690,7 @@ func TestDeleteCategoryAPI(t *testing.T) {
 			name:       "InvalidID",
 			categoryID: "invalid-uuid",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -672,15 +703,15 @@ func TestDeleteCategoryAPI(t *testing.T) {
 		},
 		{
 			name:       "NotFound",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(db.Category{}, sql.ErrNoRows)
+					Return(db.GetCategoryRow{}, sql.ErrNoRows)
 
 				store.EXPECT().
 					DeleteCategory(gomock.Any(), gomock.Any()).
@@ -692,16 +723,16 @@ func TestDeleteCategoryAPI(t *testing.T) {
 		},
 		{
 			name:       "Forbidden",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 				otherUser := randomUser()
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(otherUser.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(category, nil)
+					Return(categoryToGetCategoryRow(category), nil)
 
 				store.EXPECT().
 					DeleteCategory(gomock.Any(), gomock.Any()).
@@ -713,15 +744,15 @@ func TestDeleteCategoryAPI(t *testing.T) {
 		},
 		{
 			name:       "InternalError",
-			categoryID: util.PgxUUIDToGoogleUUID(category.ID).String(),
+			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, util.PgxUUIDToGoogleUUID(user.ID), time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetCategory(gomock.Any(), category.ID).
 					Times(1).
-					Return(category, nil)
+					Return(categoryToGetCategoryRow(category), nil)
 
 				store.EXPECT().
 					DeleteCategory(gomock.Any(), gomock.Any()).
@@ -758,7 +789,7 @@ func TestDeleteCategoryAPI(t *testing.T) {
 	}
 }
 
-func requireBodyMatchCategory(t *testing.T, body *bytes.Buffer, category db.Category) {
+func requireBodyMatchCategory(t *testing.T, body *bytes.Buffer, category interface{}) {
 	data, err := io.ReadAll(body)
 	require.NoError(t, err)
 
@@ -766,17 +797,35 @@ func requireBodyMatchCategory(t *testing.T, body *bytes.Buffer, category db.Cate
 	err = json.Unmarshal(data, &gotCategory)
 	require.NoError(t, err)
 
-	expectedID := util.PgxUUIDToGoogleUUID(category.ID)
-	expectedUserID := util.PgxUUIDToGoogleUUID(category.UserID)
-
-	require.Equal(t, expectedID, gotCategory.ID)
-	require.Equal(t, expectedUserID.String(), gotCategory.UserID)
-	require.Equal(t, category.Name, gotCategory.Name)
-	require.Equal(t, category.IconUrl.String, gotCategory.IconURL)
-
+	switch c := category.(type) {
+	case db.CreateCategoryRow:
+		require.Equal(t, c.ID, gotCategory.ID)
+		require.Equal(t, c.UserID, gotCategory.UserID)
+		require.Equal(t, c.Name, gotCategory.Name)
+		require.Equal(t, c.Type, gotCategory.Type)
+		require.Equal(t, c.IconUrl.String, gotCategory.IconURL)
+	case db.GetCategoriesByUserRow:
+		require.Equal(t, c.ID, gotCategory.ID)
+		require.Equal(t, c.UserID, gotCategory.UserID)
+		require.Equal(t, c.Name, gotCategory.Name)
+		require.Equal(t, c.Type, gotCategory.Type)
+		require.Equal(t, c.IconUrl.String, gotCategory.IconURL)
+	case db.GetCategoryRow:
+		require.Equal(t, c.ID, gotCategory.ID)
+		require.Equal(t, c.UserID, gotCategory.UserID)
+		require.Equal(t, c.Name, gotCategory.Name)
+		require.Equal(t, c.Type, gotCategory.Type)
+		require.Equal(t, c.IconUrl.String, gotCategory.IconURL)
+	case db.UpdateCategoryRow:
+		require.Equal(t, c.ID, gotCategory.ID)
+		require.Equal(t, c.UserID, gotCategory.UserID)
+		require.Equal(t, c.Name, gotCategory.Name)
+		require.Equal(t, c.Type, gotCategory.Type)
+		require.Equal(t, c.IconUrl.String, gotCategory.IconURL)
+	}
 }
 
-func requireBodyMatchCategories(t *testing.T, body *bytes.Buffer, categories []db.Category) {
+func requireBodyMatchCategories(t *testing.T, body *bytes.Buffer, categories []db.GetCategoriesByUserRow) {
 	data, err := io.ReadAll(body)
 	require.NoError(t, err)
 
@@ -787,25 +836,46 @@ func requireBodyMatchCategories(t *testing.T, body *bytes.Buffer, categories []d
 	require.Equal(t, len(categories), len(gotCategories))
 
 	for i := 0; i < len(categories); i++ {
-
-		expectedID := util.PgxUUIDToGoogleUUID(categories[i].ID)
-		expectedUserID := util.PgxUUIDToGoogleUUID(categories[i].UserID)
-
-		require.Equal(t, expectedID, gotCategories[i].ID)
-		require.Equal(t, expectedUserID.String(), gotCategories[i].UserID)
+		require.Equal(t, categories[i].ID, gotCategories[i].ID)
+		require.Equal(t, categories[i].UserID, gotCategories[i].UserID)
 		require.Equal(t, categories[i].Name, gotCategories[i].Name)
+		require.Equal(t, categories[i].Type, gotCategories[i].Type)
 		require.Equal(t, categories[i].IconUrl.String, gotCategories[i].IconURL)
-
 	}
 }
 
-func randomCategory(userID pgtype.UUID) db.Category {
-	return db.Category{
-		ID:        util.GoogleUUIDToPgxUUID(uuid.New()),
+func randomCategory(userID int64) db.CreateCategoryRow {
+	return db.CreateCategoryRow{
+		ID:        util.RandomInt(1, 1000000),
 		UserID:    userID,
+		Type:      "EXPENSE",
 		Name:      util.RandomString(6),
 		IconUrl:   pgtype.Text{String: util.RandomString(10), Valid: true},
 		CreatedAt: pgtype.Timestamptz{Time: time.Now()},
 		UpdatedAt: pgtype.Timestamptz{Time: time.Now()},
+	}
+}
+
+func randomGetCategoriesByUserRow(userID int64) db.GetCategoriesByUserRow {
+	return db.GetCategoriesByUserRow{
+		ID:        util.RandomInt(1, 1000000),
+		UserID:    userID,
+		Type:      "EXPENSE",
+		Name:      util.RandomString(6),
+		IconUrl:   pgtype.Text{String: util.RandomString(10), Valid: true},
+		CreatedAt: pgtype.Timestamptz{Time: time.Now()},
+		UpdatedAt: pgtype.Timestamptz{Time: time.Now()},
+	}
+}
+
+func categoryToGetCategoryRow(category db.CreateCategoryRow) db.GetCategoryRow {
+	return db.GetCategoryRow{
+		ID:        category.ID,
+		UserID:    category.UserID,
+		Name:      category.Name,
+		Type:      category.Type,
+		IconUrl:   category.IconUrl,
+		CreatedAt: category.CreatedAt,
+		UpdatedAt: category.UpdatedAt,
 	}
 }

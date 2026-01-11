@@ -8,17 +8,6 @@ CREATE TABLE "users" (
   "updated_at" timestamptz
 );
 
--- CREATE TABLE "accounts" (
---   "id" bigserial PRIMARY KEY,
---   "user_id" bigint NOT NULL,
---   "name" varchar(100) NOT NULL, 
---   "current_balance" numeric(19,4) NOT NULL DEFAULT 0, 
---   "is_main_account" boolean DEFAULT false,
---   "deleted_at" timestamptz, 
---   "created_at" timestamptz NOT NULL DEFAULT (now()),
---   "updated_at" timestamptz
--- );
-
 CREATE TABLE "categories" (
   "id" bigserial PRIMARY KEY,
   "user_id" bigint NOT NULL,
@@ -47,7 +36,7 @@ CREATE TABLE "transactions" (
 
 CREATE INDEX "idx_transactions_user" ON "transactions" ("user_id");
 CREATE INDEX "idx_transactions_date" ON "transactions" ("transaction_date");
-CREATE INDEX "idx_categories_user" ON "categories" ("user_id");
+CREATE INDEX "idx_categories_user" ON "categories" ("user_id", LOWER("name"));
 
 
 CREATE OR REPLACE FUNCTION update_updated_at_column()
