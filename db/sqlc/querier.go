@@ -13,22 +13,26 @@ import (
 type Querier interface {
 	CreateCategory(ctx context.Context, arg CreateCategoryParams) (CreateCategoryRow, error)
 	CreateTransaction(ctx context.Context, arg CreateTransactionParams) (CreateTransactionRow, error)
-	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error)
 	DeleteCategory(ctx context.Context, arg DeleteCategoryParams) error
 	DeleteTransaction(ctx context.Context, arg DeleteTransactionParams) error
 	DeleteUser(ctx context.Context, id int64) error
 	GetCategoriesByUser(ctx context.Context, arg GetCategoriesByUserParams) ([]GetCategoriesByUserRow, error)
 	GetCategory(ctx context.Context, id int64) (GetCategoryRow, error)
+	GetDailyExpenseTrend(ctx context.Context, arg GetDailyExpenseTrendParams) ([]GetDailyExpenseTrendRow, error)
+	GetDashboardSummary(ctx context.Context, arg GetDashboardSummaryParams) (GetDashboardSummaryRow, error)
+	GetExpenseByCategory(ctx context.Context, arg GetExpenseByCategoryParams) ([]GetExpenseByCategoryRow, error)
 	GetExpenseByDateRange(ctx context.Context, arg GetExpenseByDateRangeParams) (interface{}, error)
+	GetTotalBalance(ctx context.Context, userID int64) (pgtype.Numeric, error)
 	GetTransaction(ctx context.Context, arg GetTransactionParams) (GetTransactionRow, error)
-	GetUser(ctx context.Context, id int64) (User, error)
+	GetUser(ctx context.Context, id int64) (GetUserRow, error)
 	GetUserBalance(ctx context.Context, userID int64) (int32, error)
-	GetUserByEmail(ctx context.Context, email string) (User, error)
-	GetUserByGoogleAuthID(ctx context.Context, googleAuthID pgtype.Text) (User, error)
+	GetUserByEmail(ctx context.Context, email string) (GetUserByEmailRow, error)
+	GetUserByGoogleAuthID(ctx context.Context, googleAuthID pgtype.Text) (GetUserByGoogleAuthIDRow, error)
 	ListTransactions(ctx context.Context, arg ListTransactionsParams) ([]ListTransactionsRow, error)
 	UpdateCategory(ctx context.Context, arg UpdateCategoryParams) (UpdateCategoryRow, error)
 	UpdateTransaction(ctx context.Context, arg UpdateTransactionParams) (UpdateTransactionRow, error)
-	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
+	UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

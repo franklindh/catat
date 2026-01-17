@@ -33,3 +33,5 @@ app.env
 # .vscode/
 
 /web
+/tmp
+/.air.toml
