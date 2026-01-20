@@ -1,11 +1,14 @@
 package db
 
 import (
+	"context"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Store interface {
 	Querier
+	CreateDefaultCategories(ctx context.Context, userID int64) error
 }
 
 type SQLStore struct {

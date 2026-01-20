@@ -1,4 +1,3 @@
-// api/auth.go
 package api
 
 import (
@@ -8,9 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	db "github.com/franklindh/catat/db/sqlc"
-	"github.com/franklindh/catat/util"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -52,9 +51,19 @@ func (s *Server) googleOAuthLogin(ctx *gin.Context) {
 }
 
 func (s *Server) googleOAuthCallback(ctx *gin.Context) {
+	frontendURL := s.config.FrontendURL
+	if frontendURL == "" {
+		frontendURL = "http://localhost:5173"
+	}
+
+	redirectWithError := func(message string) {
+		redirectURL := fmt.Sprintf("%s/auth/callback?error=%s", frontendURL, url.QueryEscape(message))
+		ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)
+	}
+
 	code := ctx.Query("code")
 	if code == "" {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("code parameter is required")))
+		redirectWithError("Kode autentikasi tidak ditemukan")
 		return
 	}
 
@@ -71,73 +80,73 @@ func (s *Server) googleOAuthCallback(ctx *gin.Context) {
 
 	token, err := googleOauthConfig.Exchange(context.Background(), code)
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(fmt.Errorf("failed to exchange code: %w", err)))
+		redirectWithError("Gagal memverifikasi dengan Google")
 		return
 	}
 
 	resp, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + token.AccessToken)
 	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, util.ErrorResponse(fmt.Errorf("failed to get user info: %w", err)))
+		redirectWithError("Gagal mengambil data dari Google")
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(fmt.Errorf("failed to read user info response: %w", err)))
+		redirectWithError("Gagal membaca data user")
 		return
 	}
 
 	var userInfo googleUserInfo
 	if err := json.Unmarshal(body, &userInfo); err != nil {
-		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(fmt.Errorf("failed to parse user info: %w", err)))
+		redirectWithError("Gagal memproses data user")
 		return
 	}
 
-	user, err := s.store.GetUserByGoogleID(ctx, userInfo.ID)
+	googleAuthID := pgtype.Text{String: userInfo.ID, Valid: true}
+
+	user, err := s.store.GetUserByGoogleAuthID(ctx, googleAuthID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			var balance pgtype.Numeric
-			_ = balance.Scan("0.0000")
-
 			arg := db.CreateUserParams{
-				GoogleID:  userInfo.ID,
-				Email:     userInfo.Email,
-				Name:      pgtype.Text{String: userInfo.Name, Valid: true},
-				AvatarUrl: pgtype.Text{String: userInfo.Picture, Valid: true},
-				Balance:   balance,
+				Email:        userInfo.Email,
+				Name:         pgtype.Text{String: userInfo.Name, Valid: true},
+				AvatarUrl:    pgtype.Text{String: userInfo.Picture, Valid: true},
+				GoogleAuthID: googleAuthID,
 			}
 
-			newUser, createErr := s.store.CreateUser(ctx, arg)
+			_, createErr := s.store.CreateUser(ctx, arg)
 			if createErr != nil {
 				if pqErr, ok := createErr.(*pgconn.PgError); ok && pqErr.Code == "23505" {
-					ctx.JSON(http.StatusForbidden, util.ErrorResponse(errors.New("email already registered")))
+					redirectWithError("Email sudah terdaftar")
 					return
 				}
-				ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(createErr))
+				redirectWithError("Gagal membuat akun")
 				return
 			}
-			user = newUser
+			user, err = s.store.GetUserByGoogleAuthID(ctx, googleAuthID)
+			if err != nil {
+				redirectWithError("Gagal mengambil data akun")
+				return
+			}
+
+			// Create default categories for new user
+			if seedErr := s.store.CreateDefaultCategories(ctx, user.ID); seedErr != nil {
+				// Log error but don't fail registration
+				fmt.Printf("Warning: failed to create default categories for user %d: %v\n", user.ID, seedErr)
+			}
 		} else {
-			ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
+			redirectWithError("Gagal mengambil data akun")
 			return
 		}
 	}
 
-	accessToken, err := s.tokenMaker.CreateToken(
-		util.PgxUUIDToGoogleUUID(user.ID),
-		s.config.AccessTokenDuration,
-	)
+	accessToken, err := s.tokenMaker.CreateToken(user.ID, user.Role, s.config.AccessTokenDuration)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, util.ErrorResponse(err))
+		redirectWithError("Gagal membuat sesi")
 		return
 	}
 
-	rsp := gin.H{
-		"access_token": accessToken,
-		"user":         newUserResponse(user),
-	}
-
-	fmt.Println(user)
-	ctx.JSON(http.StatusOK, rsp)
+	redirectURL := fmt.Sprintf("%s/auth/callback?access_token=%s", frontendURL, url.QueryEscape(accessToken))
+	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }

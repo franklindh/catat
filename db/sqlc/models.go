@@ -40,4 +40,5 @@ type User struct {
 	GoogleAuthID pgtype.Text        `json:"google_auth_id"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	Role         string             `json:"role"`
 }

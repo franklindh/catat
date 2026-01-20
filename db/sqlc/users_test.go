@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createRandomUserTest(t *testing.T) User {
+func createRandomUserTest(t *testing.T) CreateUserRow {
 	arg := CreateUserParams{
 		GoogleAuthID: pgtype.Text{String: util.RandomString(12), Valid: true},
 		Email:        util.RandomEmail(),

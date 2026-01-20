@@ -24,18 +24,20 @@ func NewJWTMaker(signingKey string) (Maker, error) {
 }
 
 type jwtPayload struct {
-	UserID int64 `json:"user_id"`
+	UserID int64  `json:"user_id"`
+	Role   string `json:"role"`
 	jwt.RegisteredClaims
 }
 
-func (maker *JWTMaker) CreateToken(userID int64, duration time.Duration) (string, error) {
-	payload, err := NewPayload(userID, duration)
+func (maker *JWTMaker) CreateToken(userID int64, role string, duration time.Duration) (string, error) {
+	payload, err := NewPayload(userID, role, duration)
 	if err != nil {
 		return "", err
 	}
 
 	jwtClaims := &jwtPayload{
 		UserID: userID,
+		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: &jwt.NumericDate{Time: payload.ExpiredAt},
 			IssuedAt:  &jwt.NumericDate{Time: payload.IssuedAt},
@@ -80,6 +82,7 @@ func (maker *JWTMaker) VerifyToken(tokenString string) (*Payload, error) {
 	payload := &Payload{
 		ID:        tokenID,
 		UserID:    claims.UserID,
+		Role:      claims.Role,
 		IssuedAt:  claims.IssuedAt.Time,
 		ExpiredAt: claims.ExpiresAt.Time,
 	}

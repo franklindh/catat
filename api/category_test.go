@@ -40,7 +40,7 @@ func TestCreateCategoryAPI(t *testing.T) {
 				"icon_url": category.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				expectedArg := db.CreateCategoryParams{
@@ -91,7 +91,7 @@ func TestCreateCategoryAPI(t *testing.T) {
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 
 				userIDForAuth := user.ID
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -111,7 +111,7 @@ func TestCreateCategoryAPI(t *testing.T) {
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 
 				userIDForAuth := user.ID
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -153,10 +153,10 @@ func TestCreateCategoryAPI(t *testing.T) {
 
 func TestGetCategoriesAPI(t *testing.T) {
 	n := 5
-	user := randomUser()
+	admin := randomAdminUserForCategory()
 	categories := make([]db.GetCategoriesByUserRow, n)
 	for i := 0; i < n; i++ {
-		categories[i] = randomGetCategoriesByUserRow(user.ID)
+		categories[i] = randomGetCategoriesByUserRow(admin.ID)
 	}
 
 	testCases := []struct {
@@ -168,11 +168,11 @@ func TestGetCategoriesAPI(t *testing.T) {
 		{
 			name: "OK",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, admin.ID, RoleAdmin, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				arg := db.GetCategoriesByUserParams{
-					UserID: user.ID,
+					UserID: admin.ID,
 					Type:   "EXPENSE",
 				}
 				store.EXPECT().
@@ -199,13 +199,27 @@ func TestGetCategoriesAPI(t *testing.T) {
 			},
 		},
 		{
+			name: "ForbiddenNonAdmin",
+			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, admin.ID, RoleUser, time.Minute)
+			},
+			buildStubs: func(store *mockdb.MockStore) {
+				store.EXPECT().
+					GetCategoriesByUser(gomock.Any(), gomock.Any()).
+					Times(0)
+			},
+			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
+				require.Equal(t, http.StatusForbidden, recorder.Code)
+			},
+		},
+		{
 			name: "NotFound",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, admin.ID, RoleAdmin, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				arg := db.GetCategoriesByUserParams{
-					UserID: user.ID,
+					UserID: admin.ID,
 					Type:   "EXPENSE",
 				}
 				store.EXPECT().
@@ -221,11 +235,11 @@ func TestGetCategoriesAPI(t *testing.T) {
 		{
 			name: "InternalError",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, admin.ID, RoleAdmin, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				arg := db.GetCategoriesByUserParams{
-					UserID: user.ID,
+					UserID: admin.ID,
 					Type:   "EXPENSE",
 				}
 				store.EXPECT().
@@ -252,7 +266,7 @@ func TestGetCategoriesAPI(t *testing.T) {
 			server := newTestServer(t, store)
 			recorder := httptest.NewRecorder()
 
-			url := "/categories"
+			url := "/admin/categories"
 			request, err := http.NewRequest(http.MethodGet, url, nil)
 			require.NoError(t, err)
 
@@ -260,6 +274,19 @@ func TestGetCategoriesAPI(t *testing.T) {
 			server.router.ServeHTTP(recorder, request)
 			tc.checkResponse(t, recorder)
 		})
+	}
+}
+
+func randomAdminUserForCategory() db.User {
+	return db.User{
+		ID:           util.RandomInt(1, 1000000),
+		Email:        util.RandomEmail(),
+		Name:         pgtype.Text{String: util.RandomName(), Valid: true},
+		AvatarUrl:    pgtype.Text{String: "https://example.com/avatar.jpg", Valid: true},
+		GoogleAuthID: pgtype.Text{String: util.RandomString(12), Valid: true},
+		Role:         RoleAdmin,
+		CreatedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		UpdatedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	}
 }
 
@@ -278,7 +305,7 @@ func TestGetCategoryByIDAPI(t *testing.T) {
 			name:       "OK",
 			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -309,7 +336,7 @@ func TestGetCategoryByIDAPI(t *testing.T) {
 			name:       "InvalidID",
 			categoryID: "invalid-uuid",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -324,7 +351,7 @@ func TestGetCategoryByIDAPI(t *testing.T) {
 			name:       "NotFound",
 			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -341,7 +368,7 @@ func TestGetCategoryByIDAPI(t *testing.T) {
 			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 				otherUser := randomUser()
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, otherUser.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -357,7 +384,7 @@ func TestGetCategoryByIDAPI(t *testing.T) {
 			name:       "InternalError",
 			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -418,7 +445,7 @@ func TestUpdateCategoryAPI(t *testing.T) {
 				"icon_url": updatedCategory.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -492,7 +519,7 @@ func TestUpdateCategoryAPI(t *testing.T) {
 				"icon_url": updatedCategory.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -512,7 +539,7 @@ func TestUpdateCategoryAPI(t *testing.T) {
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 
 				userIDForAuth := user.ID
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, userIDForAuth, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -531,7 +558,7 @@ func TestUpdateCategoryAPI(t *testing.T) {
 				"icon_url": updatedCategory.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -556,7 +583,7 @@ func TestUpdateCategoryAPI(t *testing.T) {
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 				otherUser := randomUser()
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, otherUser.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -580,7 +607,7 @@ func TestUpdateCategoryAPI(t *testing.T) {
 				"icon_url": updatedCategory.IconUrl.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 
@@ -642,7 +669,7 @@ func TestDeleteCategoryAPI(t *testing.T) {
 			name:       "OK",
 			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -690,7 +717,7 @@ func TestDeleteCategoryAPI(t *testing.T) {
 			name:       "InvalidID",
 			categoryID: "invalid-uuid",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -705,7 +732,7 @@ func TestDeleteCategoryAPI(t *testing.T) {
 			name:       "NotFound",
 			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -726,7 +753,7 @@ func TestDeleteCategoryAPI(t *testing.T) {
 			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
 				otherUser := randomUser()
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, otherUser.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -746,7 +773,7 @@ func TestDeleteCategoryAPI(t *testing.T) {
 			name:       "InternalError",
 			categoryID: fmt.Sprintf("%d", category.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().

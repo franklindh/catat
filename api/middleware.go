@@ -1,4 +1,3 @@
-// file: api/middleware.go
 package api
 
 import (
@@ -13,6 +12,9 @@ const (
 	authorizationHeaderKey        = "Authorization"
 	authorizationHeaderBearerType = "bearer"
 	authorizationPayloadKey       = "authorization_payload"
+
+	RoleAdmin = "ADMIN"
+	RoleUser  = "USER"
 )
 
 func authMiddleware(maker token.Maker) gin.HandlerFunc {
@@ -45,5 +47,30 @@ func authMiddleware(maker token.Maker) gin.HandlerFunc {
 		ctx.Set(authorizationPayloadKey, payload)
 
 		ctx.Next()
+	}
+}
+
+func requireRole(allowedRoles ...string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		payload, exists := ctx.Get(authorizationPayloadKey)
+		if !exists {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authorization required"})
+			return
+		}
+
+		authPayload, ok := payload.(*token.Payload)
+		if !ok {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization payload"})
+			return
+		}
+
+		for _, role := range allowedRoles {
+			if strings.EqualFold(authPayload.Role, role) {
+				ctx.Next()
+				return
+			}
+		}
+
+		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "permission denied: insufficient role"})
 	}
 }

@@ -94,7 +94,23 @@ func (s *Server) setupRoutes() {
 		authRoutes.GET("/user", s.getUser)
 		authRoutes.PUT("/user", s.updateUser)
 		authRoutes.DELETE("/user", s.deleteUser)
+
+		authRoutes.GET("/dashboard", s.getDashboard)
+		authRoutes.GET("/dashboard/balance", s.getTotalBalance)
+		authRoutes.GET("/dashboard/expenses-by-category", s.getExpenseByCategory)
+		authRoutes.GET("/dashboard/daily-expense-trend", s.getDailyExpenseTrend)
 	}
+
+	adminRoutes := s.router.Group("/admin").Use(authMiddleware(s.tokenMaker), requireRole(RoleAdmin))
+	{
+		adminRoutes.GET("/categories", s.getCategory)
+		adminRoutes.GET("/users", s.listUsers)
+		adminRoutes.GET("/users/:id", s.getUserByID)
+		adminRoutes.PUT("/users/:id/role", s.updateUserRole)
+		adminRoutes.DELETE("/users/:id", s.deleteUserByAdmin)
+		adminRoutes.GET("/stats", s.getAdminStats)
+	}
+
 }
 
 func (s *Server) Start(address string) error {

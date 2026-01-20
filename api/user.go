@@ -18,19 +18,20 @@ type userResponse struct {
 	GoogleID  string             `json:"google_id"`
 	Email     string             `json:"email"`
 	Name      string             `json:"name"`
-	Balance   string             `json:"balance"`
 	AvatarUrl string             `json:"avatar_url"`
+	Role      string             `json:"role"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
-func newUserResponse(user db.User) userResponse {
+func newUserResponse(user db.GetUserRow) userResponse {
 	return userResponse{
 		ID:        user.ID,
 		GoogleID:  user.GoogleAuthID.String,
 		Email:     user.Email,
 		Name:      user.Name.String,
 		AvatarUrl: user.AvatarUrl.String,
+		Role:      user.Role,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 	}

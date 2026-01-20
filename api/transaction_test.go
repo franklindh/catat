@@ -42,6 +42,19 @@ func formatNumericToString(n pgtype.Numeric) string {
 	return "0"
 }
 
+func userToGetUserRow(user db.User) db.GetUserRow {
+	return db.GetUserRow{
+		ID:           user.ID,
+		Email:        user.Email,
+		Name:         user.Name,
+		AvatarUrl:    user.AvatarUrl,
+		GoogleAuthID: user.GoogleAuthID,
+		Role:         user.Role,
+		CreatedAt:    user.CreatedAt,
+		UpdatedAt:    user.UpdatedAt,
+	}
+}
+
 func randomTransaction(userID int64, categoryID *int64) db.CreateTransactionRow {
 	var catID pgtype.Int8
 	if categoryID != nil {
@@ -172,13 +185,13 @@ func TestCreateTransactionAPI(t *testing.T) {
 				"type":             transaction.Type,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetUser(gomock.Any(), user.ID).
 					Times(1).
-					Return(user, nil)
+					Return(userToGetUserRow(user), nil)
 
 				store.EXPECT().
 					CreateTransaction(gomock.Any(), gomock.Any()).
@@ -244,13 +257,13 @@ func TestCreateTransactionAPI(t *testing.T) {
 				"type":             transaction.Type,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetUser(gomock.Any(), user.ID).
 					Times(1).
-					Return(user, nil)
+					Return(userToGetUserRow(user), nil)
 
 				store.EXPECT().
 					CreateTransaction(gomock.Any(), gomock.Any()).
@@ -267,7 +280,7 @@ func TestCreateTransactionAPI(t *testing.T) {
 				"amount": "invalid",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -328,7 +341,7 @@ func TestGetTransactionAPI(t *testing.T) {
 			name:          "OK",
 			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -367,7 +380,7 @@ func TestGetTransactionAPI(t *testing.T) {
 			name:          "NotFound",
 			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -386,7 +399,7 @@ func TestGetTransactionAPI(t *testing.T) {
 			name:          "Forbidden",
 			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, otherUser.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -405,7 +418,7 @@ func TestGetTransactionAPI(t *testing.T) {
 			name:          "InternalError",
 			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -424,7 +437,7 @@ func TestGetTransactionAPI(t *testing.T) {
 			name:          "InvalidID",
 			transactionID: "invalid-id",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -498,7 +511,7 @@ func TestListTransactionsAPI(t *testing.T) {
 				page_size: int32(n),
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				arg := db.ListTransactionsParams{
@@ -541,7 +554,7 @@ func TestListTransactionsAPI(t *testing.T) {
 				page_size: int32(n),
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				arg := db.ListTransactionsParams{
@@ -565,7 +578,7 @@ func TestListTransactionsAPI(t *testing.T) {
 				page_size: int32(n),
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -583,7 +596,7 @@ func TestListTransactionsAPI(t *testing.T) {
 				page_size: 101,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -659,7 +672,7 @@ func TestUpdateTransactionAPI(t *testing.T) {
 				"description": updatedTransaction.Description.String,
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -721,7 +734,7 @@ func TestUpdateTransactionAPI(t *testing.T) {
 				"description": "Updated Description",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -746,7 +759,7 @@ func TestUpdateTransactionAPI(t *testing.T) {
 				"description": "Updated Description",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, otherUser.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -771,7 +784,7 @@ func TestUpdateTransactionAPI(t *testing.T) {
 				"description": "Updated Description",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -796,7 +809,7 @@ func TestUpdateTransactionAPI(t *testing.T) {
 				"description": "Updated Description",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -822,7 +835,7 @@ func TestUpdateTransactionAPI(t *testing.T) {
 				"description": "Updated Description",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -883,7 +896,7 @@ func TestDeleteTransactionAPI(t *testing.T) {
 			name:          "OK",
 			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -934,7 +947,7 @@ func TestDeleteTransactionAPI(t *testing.T) {
 			name:          "NotFoundOnGet",
 			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -956,7 +969,7 @@ func TestDeleteTransactionAPI(t *testing.T) {
 			name:          "Forbidden",
 			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, otherUser.ID, otherUser.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -978,7 +991,7 @@ func TestDeleteTransactionAPI(t *testing.T) {
 			name:          "InternalErrorOnGet",
 			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -1000,7 +1013,7 @@ func TestDeleteTransactionAPI(t *testing.T) {
 			name:          "InternalErrorOnDelete",
 			transactionID: strconv.FormatInt(transaction.ID, 10),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -1028,7 +1041,7 @@ func TestDeleteTransactionAPI(t *testing.T) {
 			name:          "InvalidID",
 			transactionID: "invalid-id",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().

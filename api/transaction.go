@@ -154,7 +154,7 @@ func (s *Server) createTransaction(ctx *gin.Context) {
 
 	parsedTime, err := time.Parse(time.RFC3339, req.TransactionDate)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid date format, use ISO 8601")))
+		ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid date format")))
 		return
 	}
 	transactionDate := pgtype.Timestamptz{Time: parsedTime, Valid: true}
@@ -331,7 +331,7 @@ func (s *Server) updateTransaction(ctx *gin.Context) {
 	if req.TransactionDate != "" {
 		parsedTime, err := time.Parse(time.RFC3339, req.TransactionDate)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid date format, use ISO 8601")))
+			ctx.JSON(http.StatusBadRequest, util.ErrorResponse(errors.New("invalid date format")))
 			return
 		}
 		transactionDate = pgtype.Timestamptz{Time: parsedTime, Valid: true}

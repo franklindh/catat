@@ -34,10 +34,16 @@ CREATE TABLE "transactions" (
   "updated_at" timestamptz
 );
 
+ALTER TABLE "users" 
+ADD COLUMN "role" varchar(20) NOT NULL DEFAULT 'USER' 
+CHECK (role IN ('USER', 'ADMIN'));
+
+CREATE INDEX "idx_users_role" ON "users" ("role");
 CREATE INDEX "idx_transactions_user" ON "transactions" ("user_id");
 CREATE INDEX "idx_transactions_date" ON "transactions" ("transaction_date");
 CREATE INDEX "idx_categories_user" ON "categories" ("user_id", LOWER("name"));
 
+CREATE UNIQUE INDEX "idx_unique_category_name_type" ON "categories" ("user_id", LOWER("name"), "type");
 
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$

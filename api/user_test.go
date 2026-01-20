@@ -28,9 +28,10 @@ func addAuthorization(
 	tokenMaker token.Maker,
 	authorizationType string,
 	userID int64,
+	role string,
 	duration time.Duration,
 ) {
-	token, err := tokenMaker.CreateToken(userID, duration)
+	token, err := tokenMaker.CreateToken(userID, role, duration)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -52,13 +53,13 @@ func TestGetUser(t *testing.T) {
 			name:   "OK",
 			userID: fmt.Sprintf("%d", user.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetUser(gomock.Any(), gomock.Eq(user.ID)).
 					Times(1).
-					Return(user, nil)
+					Return(userToGetUserRow(user), nil)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
@@ -82,13 +83,13 @@ func TestGetUser(t *testing.T) {
 			name:   "NotFound",
 			userID: fmt.Sprintf("%d", user.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetUser(gomock.Any(), gomock.Eq(user.ID)).
 					Times(1).
-					Return(db.User{}, pgx.ErrNoRows)
+					Return(db.GetUserRow{}, pgx.ErrNoRows)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusNotFound, recorder.Code)
@@ -98,13 +99,13 @@ func TestGetUser(t *testing.T) {
 			name:   "InternalError",
 			userID: fmt.Sprintf("%d", user.ID),
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					GetUser(gomock.Any(), gomock.Eq(user.ID)).
 					Times(1).
-					Return(db.User{}, sql.ErrConnDone)
+					Return(db.GetUserRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -154,7 +155,7 @@ func TestUpdateUser(t *testing.T) {
 				"avatar_url": "https://example.com/avatar.jpg",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				arg := db.UpdateUserParams{
@@ -168,7 +169,7 @@ func TestUpdateUser(t *testing.T) {
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Eq(arg)).
 					Times(1).
-					Return(updatedUser, nil)
+					Return(userToUpdateUserRow(updatedUser), nil)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
@@ -180,7 +181,7 @@ func TestUpdateUser(t *testing.T) {
 				"name": "Updated Name",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				arg := db.UpdateUserParams{
@@ -193,7 +194,7 @@ func TestUpdateUser(t *testing.T) {
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Eq(arg)).
 					Times(1).
-					Return(updatedUser, nil)
+					Return(userToUpdateUserRow(updatedUser), nil)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusOK, recorder.Code)
@@ -205,13 +206,13 @@ func TestUpdateUser(t *testing.T) {
 				"name": "Updated Name",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Any()).
 					Times(1).
-					Return(db.User{}, sql.ErrNoRows)
+					Return(db.UpdateUserRow{}, sql.ErrNoRows)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusNotFound, recorder.Code)
@@ -223,13 +224,13 @@ func TestUpdateUser(t *testing.T) {
 				"name": "Updated Name",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
 					UpdateUser(gomock.Any(), gomock.Any()).
 					Times(1).
-					Return(db.User{}, sql.ErrConnDone)
+					Return(db.UpdateUserRow{}, sql.ErrConnDone)
 			},
 			checkResponse: func(t *testing.T, recorder *httptest.ResponseRecorder) {
 				require.Equal(t, http.StatusInternalServerError, recorder.Code)
@@ -242,7 +243,7 @@ func TestUpdateUser(t *testing.T) {
 				"avatar_url": "invalid-url",
 			},
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 			},
@@ -303,7 +304,7 @@ func TestDeleteUser(t *testing.T) {
 		{
 			name: "OK",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -318,7 +319,7 @@ func TestDeleteUser(t *testing.T) {
 		{
 			name: "UserNotFound",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -333,7 +334,7 @@ func TestDeleteUser(t *testing.T) {
 		{
 			name: "InternalError",
 			setupAuth: func(t *testing.T, request *http.Request, tokenMaker token.Maker) {
-				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, time.Minute)
+				addAuthorization(t, request, tokenMaker, authorizationHeaderBearerType, user.ID, user.Role, time.Minute)
 			},
 			buildStubs: func(store *mockdb.MockStore) {
 				store.EXPECT().
@@ -389,8 +390,22 @@ func randomUser() db.User {
 		Name:         pgtype.Text{String: util.RandomName(), Valid: true},
 		AvatarUrl:    pgtype.Text{String: "https://example.com/avatar.jpg", Valid: true},
 		GoogleAuthID: pgtype.Text{String: util.RandomString(12), Valid: true},
+		Role:         "user",
 		CreatedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		UpdatedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+}
+
+func userToUpdateUserRow(user db.User) db.UpdateUserRow {
+	return db.UpdateUserRow{
+		ID:           user.ID,
+		Email:        user.Email,
+		Name:         user.Name,
+		AvatarUrl:    user.AvatarUrl,
+		GoogleAuthID: user.GoogleAuthID,
+		Role:         user.Role,
+		CreatedAt:    user.CreatedAt,
+		UpdatedAt:    user.UpdatedAt,
 	}
 }
 
