@@ -51,6 +51,20 @@ func parseDateQuery(ctx *gin.Context, paramName string, defaultValue time.Time) 
 	return pgtype.Timestamptz{Time: parsedTime, Valid: true}, nil
 }
 
+// getDashboard godoc
+// @Summary      Get dashboard summary
+// @Description  Mendapatkan ringkasan dashboard (total pemasukan dan pengeluaran)
+// @Tags         Dashboard
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        start_date  query     string  false  "Start date (RFC3339 or YYYY-MM-DD format)"
+// @Param        end_date    query     string  false  "End date (RFC3339 or YYYY-MM-DD format)"
+// @Success      200         {object}  dashboardSummaryResponse
+// @Failure      400         {object}  map[string]string  "Bad request"
+// @Failure      401         {object}  map[string]string  "Unauthorized"
+// @Failure      500         {object}  map[string]string  "Internal server error"
+// @Router       /dashboard [get]
 func (s *Server) getDashboard(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {
@@ -94,6 +108,17 @@ func (s *Server) getDashboard(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
+// getTotalBalance godoc
+// @Summary      Get total balance
+// @Description  Mendapatkan saldo total user (pemasukan - pengeluaran)
+// @Tags         Dashboard
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  totalBalanceResponse
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      500  {object}  map[string]string  "Internal server error"
+// @Router       /dashboard/balance [get]
 func (s *Server) getTotalBalance(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {
@@ -119,6 +144,20 @@ func (s *Server) getTotalBalance(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
+// getExpenseByCategory godoc
+// @Summary      Get expense by category
+// @Description  Mendapatkan ringkasan pengeluaran berdasarkan kategori
+// @Tags         Dashboard
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        start_date  query     string  false  "Start date (RFC3339 or YYYY-MM-DD format)"
+// @Param        end_date    query     string  false  "End date (RFC3339 or YYYY-MM-DD format)"
+// @Success      200         {array}   expenseByCategoryResponse
+// @Failure      400         {object}  map[string]string  "Bad request"
+// @Failure      401         {object}  map[string]string  "Unauthorized"
+// @Failure      500         {object}  map[string]string  "Internal server error"
+// @Router       /dashboard/expenses-by-category [get]
 func (s *Server) getExpenseByCategory(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {
@@ -172,6 +211,20 @@ func (s *Server) getExpenseByCategory(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
+// getDailyExpenseTrend godoc
+// @Summary      Get daily expense trend
+// @Description  Mendapatkan tren pengeluaran harian
+// @Tags         Dashboard
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        start_date  query     string  false  "Start date (RFC3339 or YYYY-MM-DD format)"
+// @Param        end_date    query     string  false  "End date (RFC3339 or YYYY-MM-DD format)"
+// @Success      200         {array}   dailyExpenseTrendResponse
+// @Failure      400         {object}  map[string]string  "Bad request"
+// @Failure      401         {object}  map[string]string  "Unauthorized"
+// @Failure      500         {object}  map[string]string  "Internal server error"
+// @Router       /dashboard/daily-expense-trend [get]
 func (s *Server) getDailyExpenseTrend(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {

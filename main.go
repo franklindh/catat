@@ -8,10 +8,23 @@ import (
 	db "github.com/franklindh/catat/db/sqlc"
 	"github.com/franklindh/catat/util"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	_ "github.com/franklindh/catat/docs"
 )
 
-func main() {
+// @title           Catat API
+// @version         1.0
+// @description     API untuk aplikasi pencatatan keuangan pribadi
 
+// @host      localhost:3000
+// @BasePath  /
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
+
+func main() {
 	config, err := util.LoadConfig(".")
 	if err != nil {
 		log.Fatal("cannot load config:", err)

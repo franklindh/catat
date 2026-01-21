@@ -37,6 +37,18 @@ func newUserResponse(user db.GetUserRow) userResponse {
 	}
 }
 
+// getUser godoc
+// @Summary      Get current user profile
+// @Description  Mendapatkan data profil user yang sedang login
+// @Tags         User
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  userResponse
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      404  {object}  map[string]string  "User not found"
+// @Failure      500  {object}  map[string]string  "Internal server error"
+// @Router       /user [get]
 func (s *Server) getUser(ctx *gin.Context) {
 	payload, ok := ctx.Get(authorizationPayloadKey)
 	if !ok {
@@ -71,6 +83,20 @@ type updateUserRequest struct {
 	AvatarUrl string `json:"avatar_url" binding:"omitempty,url"`
 }
 
+// updateUser godoc
+// @Summary      Update user profile
+// @Description  Mengupdate data profil user yang sedang login
+// @Tags         User
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      updateUserRequest  true  "Update user request"
+// @Success      200      {object}  map[string]string  "User updated successfully"
+// @Failure      400      {object}  map[string]string  "Bad request"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Failure      404      {object}  map[string]string  "User not found"
+// @Failure      500      {object}  map[string]string  "Internal server error"
+// @Router       /user [put]
 func (s *Server) updateUser(ctx *gin.Context) {
 	var req updateUserRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -111,6 +137,18 @@ func (s *Server) updateUser(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "user updated successfully"})
 }
 
+// deleteUser godoc
+// @Summary      Delete user account
+// @Description  Menghapus akun user yang sedang login
+// @Tags         User
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  map[string]string  "User deleted successfully"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      404  {object}  map[string]string  "User not found"
+// @Failure      500  {object}  map[string]string  "Internal server error"
+// @Router       /user [delete]
 func (s *Server) deleteUser(ctx *gin.Context) {
 	payload, ok := ctx.Get(authorizationPayloadKey)
 	if !ok {

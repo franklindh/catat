@@ -77,6 +77,22 @@ type listUsersResponse struct {
 	TotalPages int32               `json:"total_pages"`
 }
 
+// listUsers godoc
+// @Summary      List all users (Admin only)
+// @Description  Mendapatkan daftar semua user dengan pagination dan pencarian
+// @Tags         Admin
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page    query     int     false  "Page number"  default(1)
+// @Param        limit   query     int     false  "Number of items per page (max: 100)"  default(20)
+// @Param        search  query     string  false  "Search by name or email"
+// @Success      200     {object}  listUsersResponse
+// @Failure      400     {object}  map[string]string  "Bad request"
+// @Failure      401     {object}  map[string]string  "Unauthorized"
+// @Failure      403     {object}  map[string]string  "Forbidden - Admin only"
+// @Failure      500     {object}  map[string]string  "Internal server error"
+// @Router       /admin/users [get]
 func (s *Server) listUsers(ctx *gin.Context) {
 	var req listUsersRequest
 	if err := ctx.ShouldBindQuery(&req); err != nil {
@@ -158,6 +174,21 @@ func (s *Server) listUsers(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
+// getUserByID godoc
+// @Summary      Get user by ID (Admin only)
+// @Description  Mendapatkan detail user berdasarkan ID
+// @Tags         Admin
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "User ID"
+// @Success      200  {object}  adminUserResponse
+// @Failure      400  {object}  map[string]string  "Bad request"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden - Admin only"
+// @Failure      404  {object}  map[string]string  "User not found"
+// @Failure      500  {object}  map[string]string  "Internal server error"
+// @Router       /admin/users/{id} [get]
 func (s *Server) getUserByID(ctx *gin.Context) {
 	idStr := ctx.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -184,6 +215,22 @@ type updateUserRoleRequest struct {
 	Role string `json:"role" binding:"required,oneof=ADMIN USER"`
 }
 
+// updateUserRole godoc
+// @Summary      Update user role (Admin only)
+// @Description  Mengubah role user (ADMIN atau USER)
+// @Tags         Admin
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id       path      int                    true  "User ID"
+// @Param        request  body      updateUserRoleRequest  true  "Update role request"
+// @Success      200      {object}  adminUserResponse
+// @Failure      400      {object}  map[string]string  "Bad request"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Failure      403      {object}  map[string]string  "Forbidden - Admin only"
+// @Failure      404      {object}  map[string]string  "User not found"
+// @Failure      500      {object}  map[string]string  "Internal server error"
+// @Router       /admin/users/{id}/role [put]
 func (s *Server) updateUserRole(ctx *gin.Context) {
 	idStr := ctx.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -215,6 +262,21 @@ func (s *Server) updateUserRole(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
+// deleteUserByAdmin godoc
+// @Summary      Delete user (Admin only)
+// @Description  Menghapus user berdasarkan ID
+// @Tags         Admin
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "User ID"
+// @Success      200  {object}  map[string]string  "User deleted successfully"
+// @Failure      400  {object}  map[string]string  "Bad request"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden - Admin only"
+// @Failure      404  {object}  map[string]string  "User not found"
+// @Failure      500  {object}  map[string]string  "Internal server error"
+// @Router       /admin/users/{id} [delete]
 func (s *Server) deleteUserByAdmin(ctx *gin.Context) {
 	idStr := ctx.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -248,6 +310,18 @@ type adminStatsResponse struct {
 	TotalCategories   int64 `json:"total_categories"`
 }
 
+// getAdminStats godoc
+// @Summary      Get admin statistics (Admin only)
+// @Description  Mendapatkan statistik admin (total user, transaksi, kategori)
+// @Tags         Admin
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  adminStatsResponse
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden - Admin only"
+// @Failure      500  {object}  map[string]string  "Internal server error"
+// @Router       /admin/stats [get]
 func (s *Server) getAdminStats(ctx *gin.Context) {
 	totalUsers, err := s.store.CountUsers(ctx)
 	if err != nil {

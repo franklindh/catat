@@ -26,6 +26,14 @@ type googleUserInfo struct {
 	Picture string `json:"picture"`
 }
 
+// googleOAuthLogin godoc
+// @Summary      Login dengan Google OAuth
+// @Description  Mendapatkan URL untuk login menggunakan Google OAuth
+// @Tags         Authentication
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  map[string]string  "auth_url dan state untuk redirect"
+// @Router       /users/google/login [get]
 func (s *Server) googleOAuthLogin(ctx *gin.Context) {
 	state := uuid.New().String()
 
@@ -50,6 +58,17 @@ func (s *Server) googleOAuthLogin(ctx *gin.Context) {
 	})
 }
 
+// googleOAuthCallback godoc
+// @Summary      Callback Google OAuth
+// @Description  Endpoint callback untuk Google OAuth, memproses autentikasi dan membuat/login user
+// @Tags         Authentication
+// @Accept       json
+// @Produce      json
+// @Param        code   query     string  true  "Authorization code dari Google"
+// @Param        state  query     string  false "State parameter"
+// @Success      307    {string}  string  "Redirect ke frontend dengan access_token"
+// @Failure      307    {string}  string  "Redirect ke frontend dengan error message"
+// @Router       /users/google/callback [get]
 func (s *Server) googleOAuthCallback(ctx *gin.Context) {
 	frontendURL := s.config.FrontendURL
 	if frontendURL == "" {
@@ -130,9 +149,7 @@ func (s *Server) googleOAuthCallback(ctx *gin.Context) {
 				return
 			}
 
-			// Create default categories for new user
 			if seedErr := s.store.CreateDefaultCategories(ctx, user.ID); seedErr != nil {
-				// Log error but don't fail registration
 				fmt.Printf("Warning: failed to create default categories for user %d: %v\n", user.ID, seedErr)
 			}
 		} else {

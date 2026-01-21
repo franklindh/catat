@@ -122,6 +122,20 @@ func transactionsToTransactionResponses(transactions []db.ListTransactionsRow) [
 	return responses
 }
 
+// createTransaction godoc
+// @Summary      Create new transaction
+// @Description  Membuat transaksi baru (pemasukan atau pengeluaran)
+// @Tags         Transactions
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      createTransactionRequest  true  "Create transaction request"
+// @Success      201      {object}  transactionResponse
+// @Failure      400      {object}  map[string]string  "Bad request"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Failure      409      {object}  map[string]string  "Transaction already exists"
+// @Failure      500      {object}  map[string]string  "Internal server error"
+// @Router       /transactions [post]
 func (s *Server) createTransaction(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {
@@ -199,6 +213,20 @@ func (s *Server) createTransaction(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, rsp)
 }
 
+// getTransactions godoc
+// @Summary      Get transaction by ID
+// @Description  Mendapatkan detail transaksi berdasarkan ID
+// @Tags         Transactions
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Transaction ID"
+// @Success      200  {object}  transactionResponse
+// @Failure      400  {object}  map[string]string  "Bad request"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      404  {object}  map[string]string  "Transaction not found"
+// @Failure      500  {object}  map[string]string  "Internal server error"
+// @Router       /transactions/{id} [get]
 func (s *Server) getTransactions(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {
@@ -236,6 +264,20 @@ func (s *Server) getTransactions(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
+// getTransaction godoc
+// @Summary      List transactions
+// @Description  Mendapatkan daftar transaksi dengan pagination
+// @Tags         Transactions
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page_id    query     int  true   "Page number (min: 1)"
+// @Param        page_size  query     int  true   "Number of items per page (min: 5, max: 100)"
+// @Success      200        {array}   transactionResponse
+// @Failure      400        {object}  map[string]string  "Bad request"
+// @Failure      401        {object}  map[string]string  "Unauthorized"
+// @Failure      500        {object}  map[string]string  "Internal server error"
+// @Router       /transaction [get]
 func (s *Server) getTransaction(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {
@@ -271,6 +313,21 @@ func (s *Server) getTransaction(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
+// updateTransaction godoc
+// @Summary      Update transaction
+// @Description  Mengupdate transaksi berdasarkan ID
+// @Tags         Transactions
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id       path      int                       true  "Transaction ID"
+// @Param        request  body      updateTransactionRequest  true  "Update transaction request"
+// @Success      200      {object}  transactionResponse
+// @Failure      400      {object}  map[string]string  "Bad request"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Failure      404      {object}  map[string]string  "Transaction not found"
+// @Failure      500      {object}  map[string]string  "Internal server error"
+// @Router       /transactions/{id} [put]
 func (s *Server) updateTransaction(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {
@@ -369,6 +426,20 @@ func (s *Server) updateTransaction(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
+// deleteTransaction godoc
+// @Summary      Delete transaction
+// @Description  Menghapus transaksi berdasarkan ID
+// @Tags         Transactions
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Transaction ID"
+// @Success      200  {object}  map[string]string  "Transaction deleted successfully"
+// @Failure      400  {object}  map[string]string  "Bad request"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      404  {object}  map[string]string  "Transaction not found"
+// @Failure      500  {object}  map[string]string  "Internal server error"
+// @Router       /transactions/{id} [delete]
 func (s *Server) deleteTransaction(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {

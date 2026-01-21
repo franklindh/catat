@@ -50,6 +50,20 @@ func categoryResponseFromParts(id, userID int64, name, catType string, icon pgty
 	}
 }
 
+// createCategory godoc
+// @Summary      Create new category
+// @Description  Membuat kategori baru untuk user yang sedang login
+// @Tags         Categories
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      createCategoryRequest  true  "Create category request"
+// @Success      201      {object}  categoryResponse
+// @Failure      400      {object}  map[string]string  "Bad request"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Failure      409      {object}  map[string]string  "Category already exists"
+// @Failure      500      {object}  map[string]string  "Internal server error"
+// @Router       /categories [post]
 func (s *Server) createCategory(ctx *gin.Context) {
 
 	payload, exists := ctx.Get(authorizationPayloadKey)
@@ -101,6 +115,18 @@ func (s *Server) createCategory(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, rsp)
 }
 
+// getCategory godoc
+// @Summary      Get all categories
+// @Description  Mendapatkan semua kategori milik user yang sedang login
+// @Tags         Categories
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        type  query     string  false  "Filter by type (INCOME/EXPENSE)"  default(EXPENSE)
+// @Success      200   {array}   categoryResponse
+// @Failure      401   {object}  map[string]string  "Unauthorized"
+// @Failure      500   {object}  map[string]string  "Internal server error"
+// @Router       /categories [get]
 func (s *Server) getCategory(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {
@@ -137,6 +163,21 @@ func (s *Server) getCategory(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
+// getCategoryByID godoc
+// @Summary      Get category by ID
+// @Description  Mendapatkan kategori berdasarkan ID
+// @Tags         Categories
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Category ID"
+// @Success      200  {object}  categoryResponse
+// @Failure      400  {object}  map[string]string  "Bad request"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden"
+// @Failure      404  {object}  map[string]string  "Category not found"
+// @Failure      500  {object}  map[string]string  "Internal server error"
+// @Router       /categories/{id} [get]
 func (s *Server) getCategoryByID(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {
@@ -176,6 +217,23 @@ func (s *Server) getCategoryByID(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
+// updateCategory godoc
+// @Summary      Update category
+// @Description  Mengupdate kategori berdasarkan ID
+// @Tags         Categories
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id       path      int                    true  "Category ID"
+// @Param        request  body      updateCategoryRequest  true  "Update category request"
+// @Success      200      {object}  categoryResponse
+// @Failure      400      {object}  map[string]string  "Bad request"
+// @Failure      401      {object}  map[string]string  "Unauthorized"
+// @Failure      403      {object}  map[string]string  "Forbidden"
+// @Failure      404      {object}  map[string]string  "Category not found"
+// @Failure      409      {object}  map[string]string  "Category already exists"
+// @Failure      500      {object}  map[string]string  "Internal server error"
+// @Router       /categories/{id} [put]
 func (s *Server) updateCategory(ctx *gin.Context) {
 	payload, exists := ctx.Get(authorizationPayloadKey)
 	if !exists {
@@ -248,6 +306,21 @@ func (s *Server) updateCategory(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, rsp)
 }
 
+// deleteCategory godoc
+// @Summary      Delete category
+// @Description  Menghapus kategori berdasarkan ID
+// @Tags         Categories
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Category ID"
+// @Success      200  {object}  map[string]string  "Category deleted successfully"
+// @Failure      400  {object}  map[string]string  "Bad request"
+// @Failure      401  {object}  map[string]string  "Unauthorized"
+// @Failure      403  {object}  map[string]string  "Forbidden"
+// @Failure      404  {object}  map[string]string  "Category not found"
+// @Failure      500  {object}  map[string]string  "Internal server error"
+// @Router       /categories/{id} [delete]
 func (s *Server) deleteCategory(ctx *gin.Context) {
 
 	payload, exists := ctx.Get(authorizationPayloadKey)
