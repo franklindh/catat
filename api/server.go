@@ -13,8 +13,11 @@ import (
 	db "github.com/franklindh/catat/db/sqlc"
 	"github.com/franklindh/catat/token"
 	"github.com/franklindh/catat/util"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 type Server struct {
@@ -38,6 +41,18 @@ func NewServer(config util.Config, store db.Store) (*Server, error) {
 	Router.Use(gin.Logger())
 	Router.Use(gin.Recovery())
 
+	Router.Use(cors.New(cors.Config{
+		AllowAllOrigins:  true,
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"},
+		AllowCredentials: false,
+		MaxAge:           12 * time.Hour,
+	}))
+
+	rateLimiter := NewRateLimiter(100, time.Minute)
+	Router.Use(RateLimitMiddleware(rateLimiter))
+
 	tokenMaker, err := token.NewJWTMaker(config.TokenSymmetricKey)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create token maker: %w", err)
@@ -55,6 +70,8 @@ func NewServer(config util.Config, store db.Store) (*Server, error) {
 }
 
 func (s *Server) setupRoutes() {
+
+	s.router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	s.router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
