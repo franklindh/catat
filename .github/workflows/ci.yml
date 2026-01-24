@@ -9,6 +9,10 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions:
+  issues: write
+  pull-requests: write
+
 jobs:
   test:
     name: Test
@@ -17,9 +21,14 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_USER: root
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: catat
+          DB_SOURCE: postgresql://root:password@localhost:5432/catat?sslmode=disable
+          SERVER_ADDRESS: 0.0.0.0:3000
+          TOKEN_SYMMETRIC_KEY: 12345678901234567890123456789012
+          ACCESS_TOKEN_DURATION: 72h
+          GOOGLE_OAUTH_CLIENT_ID: test-client-id
+          GOOGLE_OAUTH_CLIENT_SECRET: test-client-secret
+          GOOGLE_OAUTH_REDIRECT_URL: http://localhost:3000/users/google/callback
+          FRONTEND_URL: http://localhost:5173
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
