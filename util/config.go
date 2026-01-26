@@ -25,12 +25,21 @@ func LoadConfig(path string) (config Config, err error) {
 
 	viper.AutomaticEnv()
 
+	viper.BindEnv("DB_SOURCE")
+	viper.BindEnv("SERVER_ADDRESS")
+	viper.BindEnv("TOKEN_SYMMETRIC_KEY")
+	viper.BindEnv("ACCESS_TOKEN_DURATION")
+	viper.BindEnv("GOOGLE_OAUTH_CLIENT_ID")
+	viper.BindEnv("GOOGLE_OAUTH_CLIENT_SECRET")
+	viper.BindEnv("GOOGLE_OAUTH_REDIRECT_URL")
+	viper.BindEnv("FRONTEND_URL")
+
 	err = viper.ReadInConfig()
 	if err != nil {
-
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return
 		}
+		err = nil
 	}
 
 	err = viper.Unmarshal(&config)
