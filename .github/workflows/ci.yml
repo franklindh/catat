@@ -15,7 +15,15 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     env:
-      DB_SOURCE: postgresql://root:password@localhost:5432/catat?sslmode=disable
+      DB_SOURCE: ${{ secrets.DB_SOURCE }}
+      SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
+      TOKEN_SYMMETRIC_KEY: ${{ secrets.TOKEN_SYMMETRIC_KEY }}
+      ACCESS_TOKEN_DURATION: ${{ secrets.ACCESS_TOKEN_DURATION }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REDIRECT_URL: ${{ secrets.GOOGLE_OAUTH_REDIRECT_URL }}
+      FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+
     services:
       postgres:
         image: postgres:17-alpine
