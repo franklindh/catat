@@ -55,6 +55,9 @@ jobs:
 
       - name: Run migration
         run: make migrateup
+      
+      - name: Debug ENV
+        run: echo "DB_SOURCE is ${{ secrets.DB_SOURCE }}"
 
       - name: Test
         run: make test
