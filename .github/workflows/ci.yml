@@ -1,6 +1,3 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
 name: ci-test
 
 on:
@@ -17,18 +14,23 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      DB_SOURCE: ${{ secrets.DB_SOURCE }}
+      SERVER_ADDRESS: ${{ secrets.SERVER_ADDRESS }}
+      TOKEN_SYMMETRIC_KEY: ${{ secrets.TOKEN_SYMMETRIC_KEY }}
+      ACCESS_TOKEN_DURATION: ${{ secrets.ACCESS_TOKEN_DURATION }}
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_REDIRECT_URL: ${{ secrets.GOOGLE_OAUTH_REDIRECT_URL }}
+      FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+
     services:
       postgres:
         image: postgres:17-alpine
         env:
-          DB_SOURCE: postgresql://root:password@localhost:5432/catat?sslmode=disable
-          SERVER_ADDRESS: 0.0.0.0:3000
-          TOKEN_SYMMETRIC_KEY: 12345678901234567890123456789012
-          ACCESS_TOKEN_DURATION: 72h
-          GOOGLE_OAUTH_CLIENT_ID: test-client-id
-          GOOGLE_OAUTH_CLIENT_SECRET: test-client-secret
-          GOOGLE_OAUTH_REDIRECT_URL: http://localhost:3000/users/google/callback
-          FRONTEND_URL: http://localhost:5173
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: catat
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -36,19 +38,20 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5 
         with:
           go-version: "1.24.4"
+          cache: true 
 
       - name: Install golang-migrate
         run: |
           curl -L https://github.com/golang-migrate/migrate/releases/download/v4.19.0/migrate.linux-amd64.tar.gz | tar xvz
           sudo mv migrate /usr/bin/
-          which migrate
 
       - name: Run migration
         run: make migrateup
