@@ -19,6 +19,7 @@ type Config struct {
 }
 
 func LoadConfig(path string) (config Config, err error) {
+	// Confic kck
 	viper.AddConfigPath(path)
 	viper.SetConfigName("app")
 	viper.SetConfigType("env")
