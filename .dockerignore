@@ -1,0 +1,40 @@
+# Git
+.git/
+.gitignore
+
+# GitHub Actions
+.github/
+
+# Kubernetes/EKS manifests
+eks/
+
+# Documentation
+docs/
+*.md
+LICENSE
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test files
+*_test.go
+db/mock/
+
+# Development files
+.air.toml
+tmp/
+Makefile
+
+# Sensitive/AWS files
+iam-policy.json
+trust-policy.json
+app.env
+.env
+*.env.local
+
+# OS files
+.DS_Store
+Thumbs.db

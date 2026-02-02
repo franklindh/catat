@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catat-api-deployment
+  labels:
+    app: catat-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: catat-api
+  template:
+    metadata:
+      labels:
+        app: catat-api
+    spec:
+      serviceAccountName: catat-api-sa
+      containers:
+        - name: catat-api
+          image: 321869098547.dkr.ecr.ap-southeast-3.amazonaws.com/catat:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          env:
+            
+            - name: GOOGLE_OAUTH_REDIRECT_URL
+              value: "https://api.franklidavidh.id/users/google/callback"
+            - name: FRONTEND_URL
+              value: "https://catat.franklidavidh.id"
+            - name: SERVER_ADDRESS
+              value: "0.0.0.0:3000"
+
+            
+            
+            - name: DB_SOURCE
+              valueFrom:
+                secretKeyRef:
+                  name: catat-api-secrets
+                  key: DB_SOURCE
+            - name: TOKEN_SYMMETRIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: catat-api-secrets
+                  key: TOKEN_SYMMETRIC_KEY
+            - name: GOOGLE_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: catat-api-secrets
+                  key: GOOGLE_OAUTH_CLIENT_ID
+            - name: GOOGLE_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: catat-api-secrets
+                  key: GOOGLE_OAUTH_CLIENT_SECRET
+            - name: ACCESS_TOKEN_DURATION
+              valueFrom:
+                secretKeyRef:
+                  name: catat-api-secrets
+                  key: ACCESS_TOKEN_DURATION

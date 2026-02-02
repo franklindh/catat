@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: catat-ingress
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/subnets: subnet-07063167efc6b118a,subnet-0eea8fe395176e091,subnet-086bfd5d1202531a1
+    alb.ingress.kubernetes.io/target-type: ip
+
+    
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-3:321869098547:certificate/72e7cb9c-8a6c-4a27-a029-05bde5ae5ed0
+spec:
+  ingressClassName: alb
+  rules:
+    - host: api.franklidavidh.id
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: catat-api-service
+                port:
+                  number: 80
