@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: catat-api-service
+spec:
+  selector:
+    app: catat-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
+  type: ClusterIP

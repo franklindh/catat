@@ -27,10 +27,23 @@ go.work.sum
 # env file
 app.env
 .env
+*.env.local
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
-/web
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local development
 /tmp
+/web
+
+# AWS/sensitive files
+iam-policy.json
+trust-policy.json
