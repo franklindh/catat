@@ -8,8 +8,7 @@
 # Kubernetes/EKS manifests
 eks/
 
-# Documentation
-docs/
+# Documentation (keep docs/ for swagger)
 *.md
 LICENSE
 
