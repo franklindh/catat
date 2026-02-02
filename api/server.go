@@ -40,13 +40,14 @@ func NewServer(config util.Config, store db.Store) (*Server, error) {
 	Router := gin.New()
 	Router.Use(gin.Logger())
 	Router.Use(gin.Recovery())
+	Router.Use(SecurityHeadersMiddleware())
 
 	Router.Use(cors.New(cors.Config{
-		AllowAllOrigins:  true,
+		AllowOrigins:     []string{config.FrontendURL},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"},
-		AllowCredentials: false,
+		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
 
