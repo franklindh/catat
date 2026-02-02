@@ -20,6 +20,31 @@ const (
 	RoleUser  = "USER"
 )
 
+func SecurityHeadersMiddleware() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+
+		ctx.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+
+		ctx.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+
+		ctx.Header("X-Content-Type-Options", "nosniff")
+
+		ctx.Header("X-Frame-Options", "DENY")
+
+		ctx.Header("X-XSS-Protection", "1; mode=block")
+
+		ctx.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+
+		ctx.Header("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+
+		ctx.Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+		ctx.Header("Pragma", "no-cache")
+		ctx.Header("Expires", "0")
+
+		ctx.Next()
+	}
+}
+
 func authMiddleware(maker token.Maker) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		authHeader := ctx.GetHeader(authorizationHeaderKey)

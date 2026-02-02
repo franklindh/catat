@@ -59,7 +59,6 @@ jobs:
 
     - name: Deploy to EKS
       run: |
-        kubectl apply -f eks/aws-auth.yaml
         kubectl apply -f eks/service-account.yaml
         kubectl apply -f eks/external-secret.yaml
         kubectl apply -f eks/deployment.yaml
