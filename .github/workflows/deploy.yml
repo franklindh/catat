@@ -64,9 +64,7 @@ jobs:
         kubectl apply -f eks/external-secret.yaml
         kubectl apply -f eks/deployment.yaml
         kubectl apply -f eks/service.yaml
+        kubectl apply -f eks/service-account.yaml
+        kubectl apply -f eks/external-secret.yaml
         kubectl apply -f eks/issuer.yaml
-        kubectl apply -f eks/ingress.yaml
-        
-    - name: Verify deployment
-      run: |
-        kubectl rollout status deployment/catat-api-deployment --timeout=300s
+        kubectl apply -f eks/ingress.yaml        
