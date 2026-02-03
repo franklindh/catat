@@ -22,8 +22,8 @@ type categoryResponse struct {
 	Name      string             `json:"name"`
 	Type      string             `json:"type"`
 	IconURL   string             `json:"icon_url"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at" swaggertype:"string" format:"date-time"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at" swaggertype:"string" format:"date-time"`
 }
 
 type createCategoryRequest struct {

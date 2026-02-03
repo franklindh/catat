@@ -1715,7 +1715,8 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "email": {
                     "type": "string"
@@ -1733,7 +1734,8 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 }
             }
         },
@@ -1741,7 +1743,8 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "icon_url": {
                     "type": "string"
@@ -1756,7 +1759,8 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "user_id": {
                     "type": "integer"
@@ -1816,7 +1820,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "total_amount": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 }
             }
         },
@@ -1824,10 +1828,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "total_expense": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 },
                 "total_income": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 }
             }
         },
@@ -1841,7 +1845,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "total_amount": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 },
                 "transaction_count": {
                     "type": "integer"
@@ -1875,7 +1879,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "current_balance": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 }
             }
         },
@@ -1883,13 +1887,14 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "amount": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 },
                 "category_id": {
                     "type": "integer"
                 },
                 "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "description": {
                     "type": "string"
@@ -1898,7 +1903,8 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "transaction_date": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "type": {
                     "type": "string"
@@ -1982,7 +1988,8 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "email": {
                     "type": "string"
@@ -2000,59 +2007,8 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
-                }
-            }
-        },
-        "big.Int": {
-            "type": "object"
-        },
-        "pgtype.InfinityModifier": {
-            "type": "integer",
-            "format": "int32",
-            "enum": [
-                1,
-                0,
-                -1
-            ],
-            "x-enum-varnames": [
-                "Infinity",
-                "Finite",
-                "NegativeInfinity"
-            ]
-        },
-        "pgtype.Numeric": {
-            "type": "object",
-            "properties": {
-                "exp": {
-                    "type": "integer",
-                    "format": "int32"
-                },
-                "infinityModifier": {
-                    "$ref": "#/definitions/pgtype.InfinityModifier"
-                },
-                "int": {
-                    "$ref": "#/definitions/big.Int"
-                },
-                "naN": {
-                    "type": "boolean"
-                },
-                "valid": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "pgtype.Timestamptz": {
-            "type": "object",
-            "properties": {
-                "infinityModifier": {
-                    "$ref": "#/definitions/pgtype.InfinityModifier"
-                },
-                "time": {
-                    "type": "string"
-                },
-                "valid": {
-                    "type": "boolean"
+                    "type": "string",
+                    "format": "date-time"
                 }
             }
         }
@@ -2070,9 +2026,9 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:3000",
+	Host:             "api.franklidavidh.id",
 	BasePath:         "/",
-	Schemes:          []string{},
+	Schemes:          []string{"https"},
 	Title:            "Catat API",
 	Description:      "API untuk aplikasi pencatatan keuangan pribadi",
 	InfoInstanceName: "swagger",

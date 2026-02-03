@@ -13,24 +13,24 @@ import (
 )
 
 type dashboardSummaryResponse struct {
-	TotalIncome  pgtype.Numeric `json:"total_income"`
-	TotalExpense pgtype.Numeric `json:"total_expense"`
+	TotalIncome  pgtype.Numeric `json:"total_income" swaggertype:"number"`
+	TotalExpense pgtype.Numeric `json:"total_expense" swaggertype:"number"`
 }
 
 type expenseByCategoryResponse struct {
 	CategoryName     string         `json:"category_name"`
 	IconUrl          string         `json:"icon_url"`
-	TotalAmount      pgtype.Numeric `json:"total_amount"`
+	TotalAmount      pgtype.Numeric `json:"total_amount" swaggertype:"number"`
 	TransactionCount int64          `json:"transaction_count"`
 }
 
 type dailyExpenseTrendResponse struct {
 	Date        string         `json:"date"`
-	TotalAmount pgtype.Numeric `json:"total_amount"`
+	TotalAmount pgtype.Numeric `json:"total_amount" swaggertype:"number"`
 }
 
 type totalBalanceResponse struct {
-	CurrentBalance pgtype.Numeric `json:"current_balance"`
+	CurrentBalance pgtype.Numeric `json:"current_balance" swaggertype:"number"`
 }
 
 func parseDateQuery(ctx *gin.Context, paramName string, defaultValue time.Time) (pgtype.Timestamptz, error) {

@@ -19,11 +19,11 @@ type transactionResponse struct {
 	ID              int64              `json:"id"`
 	UserID          int64              `json:"user_id"`
 	CategoryID      *int64             `json:"category_id"`
-	Amount          pgtype.Numeric     `json:"amount"`
+	Amount          pgtype.Numeric     `json:"amount" swaggertype:"number"`
 	Description     string             `json:"description"`
-	TransactionDate pgtype.Timestamptz `json:"transaction_date"`
+	TransactionDate pgtype.Timestamptz `json:"transaction_date" swaggertype:"string" format:"date-time"`
 	Type            string             `json:"type"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at" swaggertype:"string" format:"date-time"`
 }
 
 type createTransactionRequest struct {

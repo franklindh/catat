@@ -20,8 +20,8 @@ type adminUserResponse struct {
 	Name      string             `json:"name"`
 	AvatarUrl string             `json:"avatar_url"`
 	Role      string             `json:"role"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at" swaggertype:"string" format:"date-time"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at" swaggertype:"string" format:"date-time"`
 }
 
 func newAdminUserResponse(user db.ListUsersRow) adminUserResponse {

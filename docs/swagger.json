@@ -1,4 +1,7 @@
 {
+    "schemes": [
+        "https"
+    ],
     "swagger": "2.0",
     "info": {
         "description": "API untuk aplikasi pencatatan keuangan pribadi",
@@ -6,7 +9,7 @@
         "contact": {},
         "version": "1.0"
     },
-    "host": "localhost:3000",
+    "host": "api.franklidavidh.id",
     "basePath": "/",
     "paths": {
         "/admin/stats": {
@@ -1709,7 +1712,8 @@
                     "type": "string"
                 },
                 "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "email": {
                     "type": "string"
@@ -1727,7 +1731,8 @@
                     "type": "string"
                 },
                 "updated_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 }
             }
         },
@@ -1735,7 +1740,8 @@
             "type": "object",
             "properties": {
                 "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "icon_url": {
                     "type": "string"
@@ -1750,7 +1756,8 @@
                     "type": "string"
                 },
                 "updated_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "user_id": {
                     "type": "integer"
@@ -1810,7 +1817,7 @@
                     "type": "string"
                 },
                 "total_amount": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 }
             }
         },
@@ -1818,10 +1825,10 @@
             "type": "object",
             "properties": {
                 "total_expense": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 },
                 "total_income": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 }
             }
         },
@@ -1835,7 +1842,7 @@
                     "type": "string"
                 },
                 "total_amount": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 },
                 "transaction_count": {
                     "type": "integer"
@@ -1869,7 +1876,7 @@
             "type": "object",
             "properties": {
                 "current_balance": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 }
             }
         },
@@ -1877,13 +1884,14 @@
             "type": "object",
             "properties": {
                 "amount": {
-                    "$ref": "#/definitions/pgtype.Numeric"
+                    "type": "number"
                 },
                 "category_id": {
                     "type": "integer"
                 },
                 "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "description": {
                     "type": "string"
@@ -1892,7 +1900,8 @@
                     "type": "integer"
                 },
                 "transaction_date": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "type": {
                     "type": "string"
@@ -1976,7 +1985,8 @@
                     "type": "string"
                 },
                 "created_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
+                    "type": "string",
+                    "format": "date-time"
                 },
                 "email": {
                     "type": "string"
@@ -1994,59 +2004,8 @@
                     "type": "string"
                 },
                 "updated_at": {
-                    "$ref": "#/definitions/pgtype.Timestamptz"
-                }
-            }
-        },
-        "big.Int": {
-            "type": "object"
-        },
-        "pgtype.InfinityModifier": {
-            "type": "integer",
-            "format": "int32",
-            "enum": [
-                1,
-                0,
-                -1
-            ],
-            "x-enum-varnames": [
-                "Infinity",
-                "Finite",
-                "NegativeInfinity"
-            ]
-        },
-        "pgtype.Numeric": {
-            "type": "object",
-            "properties": {
-                "exp": {
-                    "type": "integer",
-                    "format": "int32"
-                },
-                "infinityModifier": {
-                    "$ref": "#/definitions/pgtype.InfinityModifier"
-                },
-                "int": {
-                    "$ref": "#/definitions/big.Int"
-                },
-                "naN": {
-                    "type": "boolean"
-                },
-                "valid": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "pgtype.Timestamptz": {
-            "type": "object",
-            "properties": {
-                "infinityModifier": {
-                    "$ref": "#/definitions/pgtype.InfinityModifier"
-                },
-                "time": {
-                    "type": "string"
-                },
-                "valid": {
-                    "type": "boolean"
+                    "type": "string",
+                    "format": "date-time"
                 }
             }
         }

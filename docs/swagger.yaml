@@ -14,7 +14,8 @@ definitions:
       avatar_url:
         type: string
       created_at:
-        $ref: '#/definitions/pgtype.Timestamptz'
+        format: date-time
+        type: string
       email:
         type: string
       google_id:
@@ -26,12 +27,14 @@ definitions:
       role:
         type: string
       updated_at:
-        $ref: '#/definitions/pgtype.Timestamptz'
+        format: date-time
+        type: string
     type: object
   api.categoryResponse:
     properties:
       created_at:
-        $ref: '#/definitions/pgtype.Timestamptz'
+        format: date-time
+        type: string
       icon_url:
         type: string
       id:
@@ -41,7 +44,8 @@ definitions:
       type:
         type: string
       updated_at:
-        $ref: '#/definitions/pgtype.Timestamptz'
+        format: date-time
+        type: string
       user_id:
         type: integer
     type: object
@@ -81,14 +85,14 @@ definitions:
       date:
         type: string
       total_amount:
-        $ref: '#/definitions/pgtype.Numeric'
+        type: number
     type: object
   api.dashboardSummaryResponse:
     properties:
       total_expense:
-        $ref: '#/definitions/pgtype.Numeric'
+        type: number
       total_income:
-        $ref: '#/definitions/pgtype.Numeric'
+        type: number
     type: object
   api.expenseByCategoryResponse:
     properties:
@@ -97,7 +101,7 @@ definitions:
       icon_url:
         type: string
       total_amount:
-        $ref: '#/definitions/pgtype.Numeric'
+        type: number
       transaction_count:
         type: integer
     type: object
@@ -119,22 +123,24 @@ definitions:
   api.totalBalanceResponse:
     properties:
       current_balance:
-        $ref: '#/definitions/pgtype.Numeric'
+        type: number
     type: object
   api.transactionResponse:
     properties:
       amount:
-        $ref: '#/definitions/pgtype.Numeric'
+        type: number
       category_id:
         type: integer
       created_at:
-        $ref: '#/definitions/pgtype.Timestamptz'
+        format: date-time
+        type: string
       description:
         type: string
       id:
         type: integer
       transaction_date:
-        $ref: '#/definitions/pgtype.Timestamptz'
+        format: date-time
+        type: string
       type:
         type: string
       user_id:
@@ -189,7 +195,8 @@ definitions:
       avatar_url:
         type: string
       created_at:
-        $ref: '#/definitions/pgtype.Timestamptz'
+        format: date-time
+        type: string
       email:
         type: string
       google_id:
@@ -201,45 +208,10 @@ definitions:
       role:
         type: string
       updated_at:
-        $ref: '#/definitions/pgtype.Timestamptz'
-    type: object
-  big.Int:
-    type: object
-  pgtype.InfinityModifier:
-    enum:
-    - 1
-    - 0
-    - -1
-    format: int32
-    type: integer
-    x-enum-varnames:
-    - Infinity
-    - Finite
-    - NegativeInfinity
-  pgtype.Numeric:
-    properties:
-      exp:
-        format: int32
-        type: integer
-      infinityModifier:
-        $ref: '#/definitions/pgtype.InfinityModifier'
-      int:
-        $ref: '#/definitions/big.Int'
-      naN:
-        type: boolean
-      valid:
-        type: boolean
-    type: object
-  pgtype.Timestamptz:
-    properties:
-      infinityModifier:
-        $ref: '#/definitions/pgtype.InfinityModifier'
-      time:
+        format: date-time
         type: string
-      valid:
-        type: boolean
     type: object
-host: localhost:3000
+host: api.franklidavidh.id
 info:
   contact: {}
   description: API untuk aplikasi pencatatan keuangan pribadi
@@ -1329,6 +1301,8 @@ paths:
       summary: Login dengan Google OAuth
       tags:
       - Authentication
+schemes:
+- https
 securityDefinitions:
   BearerAuth:
     description: Type "Bearer" followed by a space and JWT token.

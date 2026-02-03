@@ -16,8 +16,9 @@ import (
 // @version         1.0
 // @description     API untuk aplikasi pencatatan keuangan pribadi
 
-// @host      localhost:3000
+// @host      api.franklidavidh.id
 // @BasePath  /
+// @schemes   https
 
 // @securityDefinitions.apikey BearerAuth
 // @in header
